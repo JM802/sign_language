@@ -1,0 +1,5 @@
+# 忽略 result 目录下的所有内容
+result/
+
+# 忽略 data 目录下的所有内容
+data/
