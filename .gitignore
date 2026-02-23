@@ -3,3 +3,6 @@ result/
 
 # 忽略 data 目录下的所有内容
 data/
+
+# 忽略 .vscode 目录下的所有内容
+.vscode/

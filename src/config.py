@@ -8,12 +8,9 @@ DATA_ROOT = "/home/jm802/sign_language/data"
 # 原始视频目录
 VIDEO_DIR = os.path.join(DATA_ROOT, "wlasl-complete", "videos")
 
-# 🔥 核心修改：直接使用官方提供的 300 词划分文件
-# 这个文件里已经分好了 train/val/test，不需要我们自己分
 SPLIT_JSON_PATH = os.path.join(DATA_ROOT, "wlasl-complete", "nslt_300.json")
 
 # 输出目录：存放提取好的 .npy 文件
-# 建议单独建一个文件夹，和原始数据分开
 SAVE_NPY_DIR = os.path.join(DATA_ROOT, "processed_features_300")
 
 # 结果目录
