@@ -93,7 +93,7 @@ def calculate_global_stats(train_list_lines):
         print("❌ 错误：没有加载到训练数据！")
         return None, None
 
-    # 拼接并计算
+    # 拼接并计算(做正态标准化)
     concatenated = np.concatenate(all_data, axis=0)
     mean = np.mean(concatenated, axis=0)
     std = np.std(concatenated, axis=0)
@@ -157,8 +157,7 @@ def process_dataset():
                 print(f"⚠️ 处理视频 {video_id} 失败: {e}")
                 continue
         
-        # 🔄 修改点：保存【完整路径】而不是 ID
-        # 这样 dataset.py 读取时不需要再拼路径，减少耦合
+        # 保存完整路径而不是 ID，这样 dataset.py 读取时不需要再拼路径，减少耦合
         subsets[subset].append(f"{npy_save_path},{label}")
         processed_count += 1
 

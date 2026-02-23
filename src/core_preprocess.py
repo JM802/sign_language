@@ -3,10 +3,8 @@ import os
 from tqdm import tqdm
 import config
 
-# =======================================================
-# 方案三 + 方案四：双重相对坐标 + 速度特征
+# 双重相对坐标 + 速度特征
 # 输入 134 -> 输出 268 (含速度)
-# =======================================================
 def to_double_relative_with_velocity(data):
     """
     data: (T, 134)
@@ -15,16 +13,12 @@ def to_double_relative_with_velocity(data):
 
     T = data.shape[0]
 
-    # ---------------------------
     # 拆解为 (x,y) 坐标
-    # ---------------------------
     pose = data[:, 0:50].reshape(T, 25, 2)
     lh   = data[:, 50:92].reshape(T, 21, 2)
     rh   = data[:, 92:134].reshape(T, 21, 2)
 
-    # ---------------------------
-    # 方案三：双重相对坐标
-    # ---------------------------
+    # 双重相对坐标
     nose = pose[:, 0:1, :]      # 基准：鼻子
     l_wrist = lh[:, 0:1, :]     # 基准：左手腕
     r_wrist = rh[:, 0:1, :]     # 基准：右手腕
@@ -33,9 +27,7 @@ def to_double_relative_with_velocity(data):
     lh_rel = lh - l_wrist
     rh_rel = rh - r_wrist
 
-    # ---------------------------
-    # 方案四：帧间速度 Dx Dy
-    # ---------------------------
+    # 帧间速度 Dx Dy
     pose_d = np.diff(pose_rel, axis=0)
     lh_d   = np.diff(lh_rel,   axis=0)
     rh_d   = np.diff(rh_rel,   axis=0)
@@ -61,9 +53,7 @@ def to_double_relative_with_velocity(data):
 
 
 
-# =======================================================
 # 主流程：遍历 train_map_300.txt → 转换 → 计算 mean/std
-# =======================================================
 def main():
     print("🔥 开始生成：双相对坐标 + 速度特征 的全局统计量...")
     
@@ -92,7 +82,7 @@ def main():
         try:
             raw = np.load(npy_path).astype(np.float32)
 
-            # 🔥 新增：双重相对坐标 + 速度
+            # 双重相对坐标 + 速度
             rel_vel = to_double_relative_with_velocity(raw)
             all_data.append(rel_vel)
         except:

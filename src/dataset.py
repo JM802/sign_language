@@ -5,7 +5,7 @@ import numpy as np
 import os
 import random
 import config
-from core_preprocess import to_double_relative, add_velocity
+from core_preprocess import to_double_relative_with_velocity 
 
 class WLASLDataset(Dataset):
     def __init__(self, map_file, mode='train'):
@@ -45,13 +45,13 @@ class WLASLDataset(Dataset):
     def __len__(self):
         return len(self.lines)
 
-    def _augment(self, data134):
-        # 缩放 + 高斯噪声
+    def _augment(self, data268):
+        # 缩放 + 高斯噪声（这里需要修改）
         scale = random.uniform(0.90, 1.10)
-        data134 = data134 * scale
-        noise = np.random.normal(0, 0.005, data134.shape).astype(np.float32)
-        data134 = data134 + noise
-        return data134.astype(np.float32)
+        data268 = data268 * scale
+        noise = np.random.normal(0, 0.005, data268.shape).astype(np.float32)
+        data268 = data268 + noise
+        return data268.astype(np.float32)
 
     def __getitem__(self, idx):
         line = self.lines[idx].strip()
@@ -67,15 +67,12 @@ class WLASLDataset(Dataset):
             # 文件损坏处理
             return torch.zeros((self.seq_len, 268)), torch.tensor(0)
 
-        # 双重相对坐标
-        data = to_double_relative(raw)
+        # 双重相对坐标+速度
+        data = to_double_relative_with_velocity(raw)
 
         # 数据增强 (训练集才做)
         if self.mode == 'train':
             data = self._augment(data)
-
-        # 计算速度
-        data = add_velocity(data)  # (T, 268)
 
         # 归一化
         if self.mean is not None:
