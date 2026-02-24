@@ -45,17 +45,18 @@ class WLASLDataset(Dataset):
     def __len__(self):
         return len(self.lines)
 
-    def _augment(self, data268):
-        # 缩放 + 高斯噪声（这里需要修改）
+    def _augment(self, data134):
+        # 缩放 + 高斯噪声
         scale = random.uniform(0.90, 1.10)
-        data268 = data268 * scale
-        noise = np.random.normal(0, 0.005, data268.shape).astype(np.float32)
-        data268 = data268 + noise
-        return data268.astype(np.float32)
+        data134 = data134 * scale
+        noise = np.random.normal(0, 0.005, data134.shape).astype(np.float32)
+        data134 = data134 + noise
+        return data134.astype(np.float32)
 
     def __getitem__(self, idx):
         line = self.lines[idx].strip()
-        npy_path, label = line.split(',')
+        npy_path, label_str = line.split(',')
+        label=int(label_str)
         fname = os.path.basename(npy_path)
         full_path = os.path.join(config.DATA_ROOT, "processed_features_300", fname)
         if not os.path.exists(full_path):
@@ -63,16 +64,18 @@ class WLASLDataset(Dataset):
 
         try:
             raw = np.load(full_path).astype(np.float32)
-        except:
-            # 文件损坏处理
-            return torch.zeros((self.seq_len, 268)), torch.tensor(0)
+
+        except Exception as e:
+            # 异常时返回全0特征+真实label
+            print(f"⚠️ [{self.mode}] Failed to load {full_path}: {e}")
+            return torch.zeros((self.seq_len, 268)), torch.tensor(label, dtype=torch.long)
+
+        # 数据增强 (训练集才做),先对坐标特征做缩放和增加噪声，防止破坏速度的物理意义
+        if self.mode == 'train':
+            raw = self._augment(raw)
 
         # 双重相对坐标+速度
-        data = to_double_relative_with_velocity(raw)
-
-        # 数据增强 (训练集才做)
-        if self.mode == 'train':
-            data = self._augment(data)
+        data = to_double_relative_with_velocity(raw)      
 
         # 归一化
         if self.mean is not None:
