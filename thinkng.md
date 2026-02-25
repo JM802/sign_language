@@ -111,7 +111,7 @@ hands:
 
 ### 十二、模型训练
 
-1. 损失函数：CrossEntropyLoss()，分类任务通用损失函数，输出onr-hot encoding
+1. 损失函数：CrossEntropyLoss()，分类任务通用损失函数，输出Logits,内部会使用softmax变为one-hot encoding计算损失
 2. 优化器：Adam优化器，自适应学习率，梯度波动大的参数如注意力权重自动降低学习率避免震荡，梯度稳定参数如隐藏层权重保持学习率使之收敛
 3. 训练策略：ReduceLROnPlateau调度器，我们的训练任务不是最小化损失函数，而是最大化val set准确率，在达到条件时学习率减半（5轮val accuracy没有提升）
 4. 开启pin_memory=True，使cpu传输数据到gpu与gpu进行计算能并行处理，突破I/O瓶颈
