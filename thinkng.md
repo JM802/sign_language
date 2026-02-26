@@ -119,3 +119,4 @@ hands:
 3. 训练策略：ReduceLROnPlateau调度器，我们的训练任务不是最小化损失函数，而是最大化val set准确率，在达到条件时学习率减半（5轮val accuracy没有提升）
 4. 开启pin_memory=True，使cpu传输数据到gpu与gpu进行计算能并行处理，突破I/O瓶颈
 5. loss计算这一个batch平均损失，由于可能存在最后一个batch不足64的问题，mean loss*batch size求和最后/batch size
+

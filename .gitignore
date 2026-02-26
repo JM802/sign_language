@@ -6,3 +6,6 @@ data/
 
 # 忽略 .vscode 目录下的所有内容
 .vscode/
+
+# 忽略 logs 目录下的所有内容
+logs/
