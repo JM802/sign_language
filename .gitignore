@@ -1,11 +1,26 @@
-# 忽略 result 目录下的所有内容
+# 1. 忽略运行结果和日志
 result/
+logs/
+outputs/
+__pycache__/
+*.pyc
 
-# 忽略 data 目录下的所有内容
+# 2. 忽略 IDE 配置
+.vscode/
+.idea/
+._.DS_Store
+.DS_Store
+
+# 3. 忽略大数据集
 data/
 
-# 忽略 .vscode 目录下的所有内容
-.vscode/
+# 4. 忽略模型权重和骨架文件 (这是最核心的修改)
+# 绝对不要把几个 GB 的 pth 或 pkl 传到 GitHub
+model/*.pth
+checkpoint.pth
+checkpoints/
+*.pkl
 
-# 忽略 logs 目录下的所有内容
-logs/
+# 5. 忽略虚拟环境
+venv/
+env/
