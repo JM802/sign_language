@@ -67,7 +67,7 @@ nav:hover > a:not(:hover) {
     color: rgb(53, 53, 53);
 }
 
-.title {
+.titleMain {
     position: absolute;
     top: 40%;
     right: 50%;
