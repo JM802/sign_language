@@ -262,8 +262,6 @@ class Model(nn.Module):
         #import numpy as np
         #np.sum([p.numel() for p in model.parameters()]).item()
     def predict_singleview(self, images, mask_images, Ks, task, requires, gt_verts, bgimgs):
-        #以后删除
-        print("🚀 predict_singleview 正在运行...")
         vertices, faces, joints, shape, pose, trans, segm_out, textures, lights = None, None, None, None, None, None, None, None, None
         re_images, re_sil, re_img, re_depth, gt_depth = None, None, None, None, None
         pca_text, face_textures = None, None
