@@ -1,28 +1,52 @@
-# 1. 忽略运行结果和日志
-result/
-logs/
-outputs/
+# Python
 __pycache__/
 *.pyc
-result_3d/
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+venv/
+env/
 
-# 2. 忽略 IDE 配置
+# Node.js / Frontend
+node_modules/
+frontend/dist/
+frontend/.vite/
+.npm
+.eslintcache
+*.log
+.vite/
+
+# IDE
 .vscode/
 .idea/
 ._.DS_Store
 .DS_Store
+.history/
 
-# 3. 忽略大数据集
+# 数据和模型
 data/
-
-# 4. 忽略模型权重和骨架文件 (这是最核心的修改)
-# 绝对不要把几个 GB 的 pth 或 pkl 传到 GitHub
 model/*.pth
 checkpoint.pth
-checkpoints/
+# checkpoints/
 *.pkl
-*.zi
+# *.ckpt
 
-# 5. 忽略虚拟环境
-venv/
-env/
+# 输出和日志
+outputs/result/
+outputs/logs/
+outputs/result_3d/
+# result/
+logs/
+result_3d/
+
+# 临时文件
+*.tmp
+*.bak
+*.swp
+*~
+.cache/
