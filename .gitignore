@@ -32,15 +32,15 @@ frontend/.vite/
 data/
 model/*.pth
 checkpoint.pth
-checkpoints/
+# checkpoints/
 *.pkl
-*.ckpt
+# *.ckpt
 
 # 输出和日志
 outputs/result/
 outputs/logs/
 outputs/result_3d/
-result/
+# result/
 logs/
 result_3d/
 
