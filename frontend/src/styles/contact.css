@@ -1,0 +1,336 @@
+.contact-container {
+    display: flex;
+    width: 87vw;
+    height: 73vh;
+    background: transparent;
+    color: #fff;
+    overflow: hidden;
+    position: absolute;
+    justify-content: center;
+    align-items: center;
+    border: 1px solid rgba(255, 255, 255, 0.2); /* 半透明的细白边，非常高级 */
+    border-radius: 24px;
+    box-shadow: 0 30px 60px rgba(0, 0, 0, 0.5); /* 增加悬浮阴影 */
+    margin: 120px auto 50px 170px;
+}
+
+
+.map-section {
+    flex: 1;
+    position: relative;
+    width: 70vw;
+    height: 90vh;
+    border-radius: 20px;
+    background: transparent;
+    overflow: hidden;
+    object-fit: cover;
+}
+
+.map-overlay {
+    background: rgba(0, 0, 0, 0.2);
+}
+
+
+.info-section {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border-radius: 20px;
+
+    backdrop-filter: blur(20px);
+    padding: 40px;
+    box-sizing: border-box;
+}
+
+.info-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    width: 100%;
+    height: 100%;
+    justify-content: center;
+    gap:30px
+}
+
+.tooltip {
+    position: absolute;
+    /* 放在点的上方 */
+    bottom: 25px;
+    left: 50%;
+    transform: translateX(-50%) translateY(10px); /* 初始状态：稍微偏下一点 */
+
+    background: #fff;
+    color: #000;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap; /* 防止文字换行 */
+    box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+
+    /* 隐藏状态 */
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+
+    /* 禁止鼠标事件，防止遮挡点击 */
+    pointer-events: none;
+}
+
+/* 给 Tooltip 加一个小三角指向下方 */
+.tooltip::after {
+    content: '';
+    position: absolute;
+    bottom: -4px;
+    left: 50%;
+    transform: translateX(-50%) rotate(45deg);
+    width: 8px;
+    height: 8px;
+    background: #fff;
+}
+
+.map-marker {
+    position: absolute;
+
+    top: 47.6%;
+    left: 61.8%;
+
+    transform: translate(-50%, -50%);
+
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    z-index: 5;
+}
+
+.dot {
+    width: 14px;
+    height: 14px;
+    background: rgba(14, 10, 10, 0.49);
+    border-radius: 50%;
+    box-shadow: 0 0 15px rgb(0, 0, 0); /* 发光效果 */
+    z-index: 2; /* 在呼吸圈上面 */
+    position: relative;
+}
+
+/* --- 呼吸光圈动画 --- */
+.pulse-ring {
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid rgba(211, 38, 38, 0.6);
+    background: rgba(221, 21, 21, 0.1);
+    opacity: 0;
+    z-index: 1;
+    animation: pulse-animation 2s infinite ease-out;
+}
+
+.map-marker:hover .tooltip {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(-50%) translateY(0); /* 浮起归位 */
+}
+
+.map-marker:hover .dot {
+    transform: scale(1.2);
+    transition: transform 0.3s;
+}
+
+@keyframes pulse-animation {
+    0% {
+        transform: scale(1);
+        opacity: 0.8;
+    }
+    100% {
+        transform: scale(4); /* 扩散到4倍大小 */
+        opacity: 0; /* 慢慢消失 */
+    }
+}
+
+.title {
+    font-size: 4rem;
+    font-weight: 800;
+    height: 100%;
+    -webkit-box-reflect: below -0.5vw -webkit-linear-gradient(transparent 30%, rgba(0,0,0,0.3));
+    line-height: 1.1;
+    white-space: nowrap;
+
+}
+
+.letter{
+    display: inline-block;
+    color: #fff;
+    font-size: 4rem;
+}
+
+.title:hover .letter {
+    animation: wavyText 1.2s ease forwards;
+}
+
+@keyframes wavyText {
+    0%{
+        transform: translateY(0);
+    }
+    20%,25%{
+        transform: translateY(-2.5vw); rotateX(cal(360deg*3));
+        text-shadow:
+                0 0 20px rgba(255,255,255,0.5),
+                0 0 40px rgba(255,255,255,0.5),
+                0 0 60px rgba(255,255,255,0.5),
+                0 0 80px rgba(255,255,255,0.5),
+                0 0 100px rgba(255,255,255,0.5);
+    }
+}
+
+.subtitle {
+    font-size: 1.2rem;
+    font-weight: 400;
+    color: rgba(255, 255, 255, 0.8);
+    line-height: 1.5;
+    margin: 20px 0 0 0
+}
+
+.icon-btn svg {
+    width: 24px;
+    height: 24px;
+    pointer-events: none;
+}
+
+:focus-visible {
+    outline: none !important;
+}
+
+.icon-wrapper:focus,
+.icon-wrapper:focus-visible,
+.icon-btn:focus,
+.icon-btn:focus-visible,
+.icon-btn svg:focus {
+    outline: none;
+    box-shadow: none;
+}
+
+.icons-grid {
+    display: flex;
+    gap: 100px; /* 图标之间的间距 */
+    margin-top: 20px;
+}
+
+.icon-wrapper {
+    position: relative;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    outline: none;
+}
+
+.icon-btn {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: #222;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: #fff;
+    font-size: 24px; /* 控制SVG大小 */
+    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); /* 弹性贝塞尔曲线 */
+    border: 1px solid #333;
+    outline: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.icon-btn svg {
+    width: 24px;
+    height: 24px;
+}
+
+.icon-wrapper:hover .icon-btn {
+    transform: translateY(-10px) scale(1.1);
+    background: #fff;
+    color: #000;
+    box-shadow: 0 10px 20px rgba(255, 255, 255, 0.2);
+    border-color: #fff;
+}
+
+.icon-wrapper.active .icon-btn {
+    background: #fff;
+    color: #000;
+    border-color: #fff;
+}
+
+
+.bubble {
+    position: absolute;
+    bottom: 90px; /* 在图标上方 */
+    left: 50%;
+    transform: translateX(-50%) translateY(20px) scale(0.8); /* 初始位置：偏下且小 */
+    background: #fff;
+    color: #000;
+    padding: 15px 20px;
+    border-radius: 12px;
+    width: 250px;
+    text-align: center;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+
+    /* 隐藏状态 */
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    z-index: 10;
+}
+
+/* 气泡显示状态 */
+.bubble.show {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(-50%) translateY(0) scale(1); /* 弹起到正常位置 */
+}
+
+/* 气泡的小箭头 */
+.bubble-arrow {
+    position: absolute;
+    bottom: -6px;
+    left: 50%;
+    transform: translateX(-50%) rotate(45deg);
+    width: 12px;
+    height: 12px;
+    background: #fff;
+}
+
+.bubble-label {
+    display: block;
+    font-size: 12px;
+    color: #666;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.bubble-link {
+    font-size: 14px;
+    font-weight: bold;
+    color: #000;
+    text-decoration: none;
+}
+.bubble-link:hover {
+    text-decoration: underline;
+}
+
+@media (max-width: 900px) {
+    .contact-container {
+        flex-direction: column;
+    }
+    .map-section {
+        height: 40vh;
+    }
+    .info-section {
+        height: 60vh;
+    }
+    .bubble {
+        bottom: 80px; /* 调整移动端气泡位置 */
+    }
+}

@@ -80,8 +80,22 @@ button:focus-visible {
     background-attachment: fixed;
 }
 
-.bg-gradient {
-    background: linear-gradient(45deg, #FF512F, #F09819);
+.bg-purple {
+    background: linear-gradient(90deg, #FF6B9D, #8B5CF6);
+    min-height: 100vh;
+}
+
+.bg-brown{
+    background: linear-gradient(45deg, #8B4513, #DAA520);
+    min-height: 100vh;
+}
+
+.bg-gold{
+    background: linear-gradient(90deg, #DAA520 0%, #FF8C00 50%, #FF6B35 100%);
+}
+
+.bg-coralPink {
+    background: linear-gradient(135deg, #FF9500 0%, #FF6B9D 100%);
     min-height: 100vh;
 }
 

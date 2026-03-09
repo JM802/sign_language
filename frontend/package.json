@@ -19,6 +19,7 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.13.1",
+    "react-webcam": "^7.2.0",
     "three": "^0.183.2"
   },
   "devDependencies": {

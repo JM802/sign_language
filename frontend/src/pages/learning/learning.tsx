@@ -3,6 +3,10 @@ import Hello from '../../assets/image/hello.png'
 import Baby from '../../assets/image/baby.png'
 import Bread from '../../assets/image/bread.png'
 import Halloween from '../../assets/image/halloween.png'
+
+import banana from '../../assets/video/banana.mp4'
+
+
 import '../../styles/learning.css'
 import {useRef} from "react";
 
@@ -40,15 +44,47 @@ export default function Learning() {
     return (
         <div className='container'>
             <div className='slider' ref={sliderRef}>
-                <img src={Banana} alt="banana" className='box' />
-                <img src={Hello} alt="hello" className='box' />
-                <img src={Baby} alt="baby" className='box' />
-                <img src={Bread} alt="bread" className='box' />
-                <img src={Halloween} alt="Halloween" className='box' />
+
+                <div className='box'>
+                    <img src={Banana} alt="banana" className='preview'/>
+                    <div className='clipBox'>
+                        <video src={banana} muted loop playsInline autoPlay />
+                    </div>
+                </div>
+
+                <div className='box'>
+                    <img src={Hello} alt="hello" className='preview'/>
+                    <div className='clipBox'>
+                        <video src="/video/hello.mp4" muted loop playsInline />
+                    </div>
+                </div>
+
+                <div className='box'>
+                    <img src={Baby} alt="baby" className='preview'/>
+                    <div className='clipBox'>
+                        <video src="/video/baby.mp4" muted loop playsInline />
+                    </div>
+                </div>
+
+                <div className='box'>
+                    <img src={Bread} alt="bread" className='preview'/>
+                    <div className='clipBox'>
+                        <video src="/video/bread.mp4" muted loop playsInline />
+                    </div>
+                </div>
+
+                <div className='box'>
+                    <img src={Halloween} alt="Halloween" className='preview'/>
+                    <div className='clipBox'>
+                        <video src="/video/halloween.mp4" muted loop playsInline />
+                    </div>
+                </div>
+
             </div>
+
             <div className='buttons'>
                 <span className='prev' onClick={handlePrev}>&lt;</span>
-                <span className='prev' onClick={handleNext}>&gt;</span>
+                <span className='next' onClick={handleNext}>&gt;</span>
             </div>
         </div>
     )
