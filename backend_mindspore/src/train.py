@@ -13,14 +13,18 @@ from model import BiLSTMAttentionModel
 
 # ===================== 设备 & 全局配置 =====================
 # 昇腾环境使用 Ascend；无卡时回退到 CPU
+RUNTIME_DEVICE = config.DEVICE
 try:
     context.set_context(mode=context.GRAPH_MODE)
     if hasattr(ms, "set_device"):
         ms.set_device(config.DEVICE)
     else:
         context.set_context(device_target=config.DEVICE)
+    if config.DEVICE == "Ascend":
+        context.set_context(ascend_config={"precision_mode": "allow_fp32_to_fp16"})
     print(f"✅ MindSpore device: {config.DEVICE}")
 except Exception:
+    RUNTIME_DEVICE = "CPU"
     context.set_context(mode=context.GRAPH_MODE)
     if hasattr(ms, "set_device"):
         ms.set_device("CPU")
@@ -28,7 +32,7 @@ except Exception:
         context.set_context(device_target="CPU")
     print("⚠️  Ascend not available, fallback to CPU")
 
-NUM_WORKERS = 1 if os.name == "nt" else 8
+NUM_WORKERS = 1 if os.name == "nt" else 4
 argmax = ops.Argmax(axis=1)
 
 BATCH_SIZE  = config.BATCH_SIZE
@@ -36,6 +40,8 @@ EPOCHS      = config.EPOCHS
 SEQ_LEN     = config.SEQ_LEN
 NUM_CLASSES = config.NUM_CLASSES
 INPUT_SIZE  = 268  # 双重相对坐标 + 速度
+INPUT_DTYPE = ms.float16 if RUNTIME_DEVICE == "Ascend" else ms.float32
+LABEL_DTYPE = ms.int32
 
 # ===================== 数据集 =====================
 train_set = WLASLDataset(config.TRAIN_MAP_PATH, mode='train')
@@ -70,6 +76,8 @@ model = BiLSTMAttentionModel(
     hidden_size=256,
     num_classes=NUM_CLASSES
 )
+if RUNTIME_DEVICE == "Ascend":
+    model.to_float(ms.float16)
 
 # ===================== 损失 & 优化器 =====================
 loss_fn   = nn.CrossEntropyLoss()
@@ -100,8 +108,8 @@ def evaluate(network, data_loader):
     network.set_train(False)
     correct, total = 0, 0
     for batch in data_loader.create_dict_iterator():
-        data  = batch["data"]
-        label = batch["label"]
+        data  = ops.cast(batch["data"], INPUT_DTYPE)
+        label = ops.cast(batch["label"], LABEL_DTYPE)
         logits = network(data)
         preds = argmax(logits)
         correct += (preds == label).asnumpy().sum()
@@ -125,8 +133,8 @@ for epoch in range(EPOCHS):
     total_loss, total_correct, total_samples = 0.0, 0, 0
 
     for batch in train_loader.create_dict_iterator():
-        data  = batch["data"]
-        label = batch["label"]
+        data  = ops.cast(batch["data"], INPUT_DTYPE)
+        label = ops.cast(batch["label"], LABEL_DTYPE)
         loss  = train_cell(data, label)
 
         # 统计

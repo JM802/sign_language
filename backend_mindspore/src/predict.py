@@ -20,7 +20,7 @@ from core_preprocess import to_double_relative_with_velocity
 from model import BiLSTMAttentionModel
 
 
-def setup_device() -> None:
+def setup_device() -> str:
     """配置运行设备，Ascend 不可用时自动回退到 CPU。"""
     try:
         context.set_context(mode=context.GRAPH_MODE)
@@ -28,7 +28,10 @@ def setup_device() -> None:
             ms.set_device(config.DEVICE)
         else:
             context.set_context(device_target=config.DEVICE)
+        if config.DEVICE == "Ascend":
+            context.set_context(ascend_config={"precision_mode": "allow_fp32_to_fp16"})
         print(f"✅ Predict device: {config.DEVICE}")
+        return config.DEVICE
     except Exception:
         context.set_context(mode=context.GRAPH_MODE)
         if hasattr(ms, "set_device"):
@@ -36,6 +39,7 @@ def setup_device() -> None:
         else:
             context.set_context(device_target="CPU")
         print("⚠️  Ascend not available, fallback to CPU")
+        return "CPU"
 
 
 def load_normalization() -> Tuple[np.ndarray, np.ndarray]:
@@ -120,7 +124,7 @@ def pick_default_sample() -> str:
     return sample_path
 
 
-def build_model(checkpoint_path: str) -> BiLSTMAttentionModel:
+def build_model(checkpoint_path: str, runtime_device: str) -> BiLSTMAttentionModel:
     if not os.path.exists(checkpoint_path):
         raise FileNotFoundError(f"找不到权重文件: {checkpoint_path}")
 
@@ -129,14 +133,18 @@ def build_model(checkpoint_path: str) -> BiLSTMAttentionModel:
         hidden_size=256,
         num_classes=config.NUM_CLASSES,
     )
+    if runtime_device == "Ascend":
+        model.to_float(ms.float16)
     param_dict = load_checkpoint(checkpoint_path)
     load_param_into_net(model, param_dict)
     model.set_train(False)
     return model
 
 
-def predict(model: BiLSTMAttentionModel, sample: np.ndarray, topk: int = 3):
-    tensor = ms.Tensor(sample[None, ...], dtype=ms.float32)  # [1, T, 268]
+def predict(model: BiLSTMAttentionModel, sample: np.ndarray, topk: int = 3, runtime_device: str = "CPU"):
+    input_dtype = ms.float16 if runtime_device == "Ascend" else ms.float32
+    np_dtype = np.float16 if runtime_device == "Ascend" else np.float32
+    tensor = ms.Tensor(sample[None, ...].astype(np_dtype), dtype=input_dtype)  # [1, T, 268]
     logits = model(tensor)
     probs = ms.ops.softmax(logits, axis=1).asnumpy()[0]
 
@@ -170,13 +178,13 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    setup_device()
+    runtime_device = setup_device()
 
     sample_path = args.input or pick_default_sample()
     mean, std = load_normalization()
     sample = preprocess_npy(sample_path, mean, std)
-    model = build_model(args.checkpoint)
-    probs, top_indices = predict(model, sample, args.topk)
+    model = build_model(args.checkpoint, runtime_device)
+    probs, top_indices = predict(model, sample, args.topk, runtime_device)
 
     print(f"\n📄 输入样本: {sample_path}")
     print(f"📦 权重文件: {args.checkpoint}")
