@@ -26,7 +26,7 @@ function App() {
                             <Route path="/contacts" element={<Contact />} />
 
                         </Routes>
-             </div>
+                </div>
             </BlinkTransitionProvider>
         </BrowserRouter>
     );

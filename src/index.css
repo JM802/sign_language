@@ -5,7 +5,7 @@
 
   color-scheme: light dark;
   color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
+  background-color: transparent;
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -13,6 +13,8 @@
   -moz-osx-font-smoothing: grayscale;
 
   min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 a {
@@ -33,6 +35,8 @@ body {
 
   height: 100%;
   padding: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 h1 {
@@ -87,7 +91,9 @@ button:focus-visible {
 
 .bg-brown{
     background: linear-gradient(45deg, #8B4513, #DAA520);
-    min-height: 100vh;
+    min-height: 200vh;
+    overflow-y: auto;
+    height: 100%;
 }
 
 .bg-gold{
@@ -111,5 +117,10 @@ button:focus-visible {
 
 .bg-gradient::after{
     background: linear-gradient(-45deg, #FF512F, #F09819);
+}
+
+.page-long .app-wrapper,
+.page-long #root{
+    min-height: 200vh;
 }
 

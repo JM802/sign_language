@@ -108,7 +108,6 @@ export default function translate() {
                         ) : (
                             <div className="camera-placeholder">
                                 <div className="placeholder-icon">📷</div>
-                                <p>Turn on camera to start</p>
                             </div>
                         )}
                     </div>

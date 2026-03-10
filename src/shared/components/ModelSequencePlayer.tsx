@@ -89,7 +89,7 @@ interface ModelSequencePlayerProps {
 const ModelSequencePlayer: React.FC<ModelSequencePlayerProps> = ({
                                                                      isStreaming,
                                                                      glbUrls,
-                                                                     fps = 2
+                                                                     fps = 5
                                                                  }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLDivElement>(null);
@@ -97,7 +97,6 @@ const ModelSequencePlayer: React.FC<ModelSequencePlayerProps> = ({
     // 预加载所有模型 (即使关闭摄像头，模型依然在内存里，下次打开秒开)
     useEffect(() => {
         if (glbUrls.length > 0) {
-            // @ts-ignore
             useGLTF.preload(glbUrls);
         }
     }, [glbUrls]);
@@ -105,7 +104,6 @@ const ModelSequencePlayer: React.FC<ModelSequencePlayerProps> = ({
     // 使用 GSAP 每次打开摄像头时重新触发淡入效果
     useGSAP(() => {
         if (isStreaming && glbUrls.length > 0 && canvasRef.current) {
-            // 建议用 fromTo，保证每次打开都是从 0 到 1 的淡入
             gsap.fromTo(canvasRef.current,
                 { opacity: 0 },
                 { opacity: 1, duration: 1.5, ease: 'power2.out' }
@@ -135,7 +133,6 @@ const ModelSequencePlayer: React.FC<ModelSequencePlayerProps> = ({
 
                             <Suspense fallback={<Loader />}>
                                 <Stage environment="city" intensity={0.6}>
-                                    {/* 将外部传入的 fps 传递给控制器 */}
                                     <SequenceController urls={glbUrls} fps={fps} />
                                 </Stage>
                             </Suspense>
