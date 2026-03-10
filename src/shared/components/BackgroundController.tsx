@@ -5,8 +5,7 @@ export const BackgroundController = () => {
     const location = useLocation();
 
     useEffect(() => {
-        document.body.classList.remove('bg-coralPink', 'bg-gold', 'bg-brown', 'bg-purple', 'bg-home');
-
+        document.body.classList.remove('bg-coralPink', 'bg-gold', 'bg-brown', 'bg-purple', 'bg-home', 'page-long');
         switch (location.pathname) {
             case '/contacts':
                 document.body.classList.add('bg-purple');
@@ -18,7 +17,7 @@ export const BackgroundController = () => {
                 document.body.classList.add('bg-gold');
                 break;
             case '/about':
-                document.body.classList.add('bg-brown');
+                document.body.classList.add('bg-brown','page-long');
                 break;
             case '/':
                 document.body.classList.add('bg-home');

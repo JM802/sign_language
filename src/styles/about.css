@@ -1,3 +1,196 @@
+.about-item {
+    display: flex;
+    flex-direction: row; /* 显式声明为横向 */
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 120px;
+    position: relative;
+    width: 100%;
+    z-index: 1;
+    opacity: 0;
+    padding: 0 20px 80px 20px;
+}
 
-/*
- */
+.about-header {
+    text-align: center;
+    margin-top: 150px;
+
+    margin-bottom: 80px;
+    position: relative;
+    z-index: 10;          /* 确保标题在最上层 */
+
+    /* 简单的入场动画预设 (可以配合 GSAP 或者直接 CSS 动画) */
+    opacity: 0;
+    animation: fadeInDown 1s ease-out forwards;
+}
+
+/* 主标题样式 (About Us) */
+.about-header h2 {
+    font-size: 3.5rem;          /* 大标题，更有冲击力 */
+    font-weight: 800;           /* 粗体 */
+    letter-spacing: 2px;        /* 字间距稍微拉开，更现代 */
+    margin-bottom: 16px;
+
+    /* 文字颜色：纯白 */
+    color: #ffffff;
+
+    /* (可选) 给标题加一点发光或文字阴影，让它从背景中浮现出来 */
+    text-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+
+/* 副标题/描述语样式 (The journey of our company) */
+.about-header p {
+    font-size: 1.25rem;
+    font-weight: 400;
+    max-width: 600px;           /* 限制描述语宽度，不要太长 */
+    margin: 0 auto;             /* 居中 */
+
+    /* 颜色：稍微带点灰度的白，降低层级，突出主标题 */
+    color: rgba(255, 255, 255, 0.75);
+    line-height: 1.6;
+}
+
+/* 标题底部的小装饰线 (增加高级感) */
+.about-header::after {
+    content: '';
+    display: block;
+    width: 60px;                /* 短线 */
+    height: 4px;
+    background: #DAA520;        /* 用你背景的金色点缀一下 */
+    margin: 30px auto 0 auto;   /* 居中并与上方文字保持距离 */
+    border-radius: 2px;
+    box-shadow: 0 0 10px rgba(218, 165, 32, 0.5); /* 金色微光 */
+}
+
+/* 简单的 CSS 动画：标题从上往下淡入 */
+@keyframes fadeInDown {
+    0% {
+        opacity: 0;
+        transform: translateY(-30px);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* 反向容器 */
+.about-item.reverse {
+    flex-direction: row-reverse;
+}
+
+/* --- 左右两列强行锁定 45% --- */
+/* flex: 0 0 45% 的意思是：绝对不许缩小，绝对不许放大，死死锁在 45%！ */
+.about-content,
+.about-image-wrapper {
+    width: 45%;
+    flex: 0 0 45%;
+}
+
+/* 1. 默认情况（单数行）：文字在左边，为了好看，我们让它靠右对齐，紧贴中间的线 */
+.about-content {
+    text-align: right;
+    padding-right: 40px; /* 留出离中心线的呼吸空间 */
+}
+
+/* 2. 反向情况（偶数行）：文字在右边，我们让它靠左对齐，紧贴中间的线 */
+.about-item.reverse .about-content {
+    text-align: left;
+    padding-left: 40px;
+    padding-right: 0;
+}
+
+/* 修正文字颜色 */
+.about-content h3 {
+    font-size: 2.2rem;
+    color: #ffffff;
+    margin-bottom: 15px;
+    line-height: 1.2;
+}
+
+.about-content p {
+    color: rgba(255, 255, 255, 0.8);
+    line-height: 1.6;
+    font-size: 1.1rem;
+}
+
+.about-image-wrapper {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 16px;
+    overflow: hidden;
+    aspect-ratio: 16 / 9; /* 🚨 强制锁定 16:9 比例，永不崩塌 */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+}
+
+.about-image-wrapper img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover; /* 保证图片不变形 */
+}
+
+.about-marker {
+    width: 70px;
+    height: 70px;
+    background: rgba(40, 40, 40, 0.6);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 2px solid rgba(255, 255, 255, 0.6);
+    color: #ffffff;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 1.1rem;
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    box-shadow: 0 0 20px rgba(0,0,0,0.5);
+}
+
+@media (max-width: 900px) {
+    .about-line {
+        display: none; /* 手机隐藏中线 */
+    }
+    .about-item,
+    .about-item.reverse {
+        flex-direction: column; /* 手机强制竖排 */
+        margin-bottom: 80px;
+    }
+
+    /* 解除 45% 的死锁，恢复 100% 满宽 */
+    .about-content,
+    .about-image-wrapper {
+        width: 100%;
+        flex: none;
+        padding: 0;
+        text-align: center; /* 手机上全部居中对齐 */
+    }
+
+    /* 覆盖前面写的左右对齐 */
+    .about-content,
+    .about-item.reverse .about-content {
+        text-align: center;
+        padding: 0;
+    }
+
+    /* 手机端重新排列顺序：圆圈(1) -> 标题文字(2) -> 图片(3) */
+    .about-marker {
+        position: relative;
+        left: auto;
+        transform: none;
+        order: 1;
+        margin: 0 auto 20px auto;
+    }
+    .about-content {
+        order: 2;
+        margin-bottom: 30px;
+    }
+    .about-image-wrapper {
+        order: 3;
+    }
+}
