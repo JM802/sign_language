@@ -50,6 +50,9 @@ SIGMA=1.7
 DEBUG_OUT_DIR="/home/jm802/sign_language/debug_results"
 
 #S2HAND路径配置
-S2HAND_SDK_PATH=S2HAND_SDK_PATH = "/home/jm802/sign_language/S2HAND_code"
+S2HAND_SDK_PATH=S2HAND_PATH = "/home/jm802/sign_language/S2HAND_code"
 PERTAINED_MODEL="/home/jm802/sign_language/S2HAND_code/checkpoints/checkpoint.pth"
 DB_ROOT="/home/jm802/sign_language/result_3d/database_npz"
+RIGHT_PKL_PATH="/home/jm802/sign_language/3d_sign_language/mano_v1_2/models/MANO_RIGHT.pkl"
+
+FACTOR=2
