@@ -50,9 +50,9 @@ SIGMA=1.7
 DEBUG_OUT_DIR="/home/jm802/sign_language/debug_results"
 
 #SHaMeR路径配置
-S2HAND_PATH = "/home/jm802/sign_language/HaMeR_code"
+S2HAND_PATH= "/home/jm802/sign_language/s2hand_code/S2HAND"
 
-
+PERTAINED_MODEL="/home/jm802/sign_language/s2hand_code/checkpoints/checkpoints.pth"
 
 DB_ROOT="/home/jm802/sign_language/result_3d/database_npz"
 

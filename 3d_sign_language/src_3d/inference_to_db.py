@@ -10,6 +10,15 @@ import sys
 import config_3d
 import datetime
 
+# 1. 路径与环境配置
+S2HAND_PATH = config_3d.S2HAND_PATH
+sys.path.append(S2HAND_PATH)
+sys.path.append(os.path.join(S2HAND_PATH, "examples")) 
+sys.path.append(os.path.join(S2HAND_PATH, "utils"))
+
+from examples.models_new import Model
+from examples.train_utils import load_model
+
 # 获取当前脚本所在目录的上一级目录（即 3d_sign_language 文件夹）
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
