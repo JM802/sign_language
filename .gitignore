@@ -4,6 +4,7 @@ logs/
 outputs/
 __pycache__/
 *.pyc
+result_3d/
 
 # 2. 忽略 IDE 配置
 .vscode/
@@ -22,7 +23,6 @@ checkpoints/
 *.pkl
 *.zip
 IntagHand
-
 
 # 5. 忽略虚拟环境
 venv/
