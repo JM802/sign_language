@@ -78,7 +78,7 @@ def init_engine():
     return model, device
 
 @torch.no_grad()
-def run_batch_inference(model, device, folder_path,batch_size=32):
+def run_batch_inference(model, device, folder_path,side,batch_size=32):
     img_files = sorted([f for f in os.listdir(folder_path) if f.endswith('.jpg')])
     if not img_files: return None
 
@@ -89,7 +89,15 @@ def run_batch_inference(model, device, folder_path,batch_size=32):
         batch_files = img_files[i : i + batch_size]
         
         # 打包当前块
-        imgs = torch.stack([transform(Image.open(os.path.join(folder_path, f)).convert('RGB')) for f in batch_files]).to(device)
+        batch_imgs = []
+        for f in batch_files:
+            img_pil = Image.open(os.path.join(folder_path, f)).convert('RGB')
+            if side == 'L':
+                img_pil = img_pil.transpose(Image.FLIP_LEFT_RIGHT)
+            batch_imgs.append(transform(img_pil))
+        
+        imgs = torch.stack(batch_imgs).to(device)
+
         K = torch.eye(4).unsqueeze(0).repeat(len(batch_files), 1, 1).to(device)
         
         # 核心推理
@@ -109,6 +117,12 @@ def run_batch_inference(model, device, folder_path,batch_size=32):
     vertices = np.concatenate(all_vertices, axis=0) # (N, 778, 3)
     pose = np.concatenate(all_pose, axis=0)         # (N, 48)
     shape = np.concatenate(all_shape, axis=0)       # (N, 10)
+
+    # 如果是左手，将推理出的伪右手 3D 坐标在 X 轴上翻转回左手
+    if side == 'L':
+        joints[:, :, 0] = -joints[:, :, 0]
+        vertices[:, :, 0] = -vertices[:, :, 0]
+        # 后续在 render_3d.py 中渲染左手时，必须使用 MANO_LEFT.pkl 的面片，或者对 MANO_RIGHT 的面片做 [0, 2, 1] 绕序反转。
     
     return {"joints": joints, "vertices": vertices, "pose": pose, "shape": shape, "camera": None}
 
@@ -159,7 +173,7 @@ def build_database():
                 
                 try:
                     # 核心推理：获取 3D 坐标
-                    data = run_batch_inference(model, device, target_dir)
+                    data = run_batch_inference(model, device, target_dir, side)
                     
                     if data is not None:
                         # 创建存储目录：db_root/词条/视频ID/
@@ -168,12 +182,16 @@ def build_database():
                         
                         # 存储为压缩格式 .npz
                         save_path = os.path.join(save_dir, f"data_{side}.npz")
+
+                        is_flipped_flag = True if side == 'L' else False
+
                         np.savez_compressed(
                             save_path,
                             joints=data['joints'],
                             pose=data['pose'],
                             shape=data['shape'],
-                            vertices=data['vertices']
+                            vertices=data['vertices'],
+                            is_flipped=is_flipped_flag
                         )
                         has_data_in_this_vid=True
                     else:

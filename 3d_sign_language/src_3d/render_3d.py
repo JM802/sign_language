@@ -11,21 +11,13 @@ import glob
 from scipy.interpolate import interp1d
 
 # 加载 MANO 面片 (Faces) 方案
-def load_mano_faces(side):
-    """
-    根据 side ('R' 或 'L') 加载对应的 MANO 原生拓扑面片
-    """
-    if side == 'R':
-        pkl_path = config_3d.RIGHT_PKL_PATH
-    else:
-        pkl_path = config_3d.LEFT_PKL_PATH
-
+def load_mano_faces():
+    pkl_path = config_3d.RIGHT_PKL_PATH
     if not os.path.exists(pkl_path):
-        raise FileNotFoundError(f"❌ 找不到 MANO {side}手 权重文件: {pkl_path}")
-    
+        raise FileNotFoundError(f"❌ 找不到 MANO 权重文件: {pkl_path}")
     with open(pkl_path, 'rb') as f:
         mano_data = pickle.load(f, encoding='latin1')
-    return mano_data['f'] # 返回 face 拓扑
+    return mano_data['f']# 返回 face 拓扑
 
 def interpolate_vertices_sequence(verts, factor):
     """
@@ -145,9 +137,10 @@ def export_glb_sequence(word_dir, output_folder):
     # 总循环长度取最大值，保证最长的那只手能播完
     num_frames = max(len_r_smooth, len_l_smooth)
 
-    # 加载左右手面片
-    faces_r = load_mano_faces('R') if has_r else None
-    faces_l = load_mano_faces('L') if has_l else None
+    # 核心逻辑对齐你的思路：全场只用右手面片！
+    faces_base = load_mano_faces() 
+    # 用 [0, 2, 1] 把右手的面片顺序翻转，这就是完美的左手面片！
+    faces_left = faces_base[:, [0, 2, 1]]
     
     # 初始化视频写入器
     os.makedirs(output_folder, exist_ok=True)
@@ -160,14 +153,14 @@ def export_glb_sequence(word_dir, output_folder):
         # 处理右手
         if v_r_smooth is not None and i < len_r_smooth:
             # 右手通常是基准，直接使用原始 faces_base
-            mesh_r = trimesh.Trimesh(vertices=v_r_smooth[i], faces=faces_r, process=False)
+            mesh_r = trimesh.Trimesh(vertices=v_r_smooth[i], faces=faces_base, process=False)
             # 给右手赋予天蓝色
             mesh_r.visual.face_colors=[135, 206, 250, 255]
             combined_mesh = mesh_r
 
         # 处理左手
         if v_l_smooth is not None and i < len_l_smooth:
-            mesh_l = trimesh.Trimesh(vertices=v_l_smooth[i], faces=faces_l, process=False)
+            mesh_l = trimesh.Trimesh(vertices=v_l_smooth[i], faces=faces_left, process=False)
             mesh_l.visual.face_colors = [255, 127, 80, 255] # 珊瑚橙
             
             # 合并网格

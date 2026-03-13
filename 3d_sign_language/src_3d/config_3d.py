@@ -58,9 +58,6 @@ DB_ROOT="/home/jm802/sign_language/result_3d/database_npz"
 
 RIGHT_PKL_PATH="/home/jm802/sign_language/3d_sign_language/mano_v1_2/models/MANO_RIGHT.pkl"
 
-LEFT_PKL_PATH="/home/jm802/sign_language/3d_sign_language/mano_v1_2/models/MANO_LEFT.pkl"
-
-
 FACTOR=2
 SCALE_FACTOR=0.003
 FOCAL_CONSTANT=20.0
