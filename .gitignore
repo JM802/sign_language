@@ -23,6 +23,7 @@ checkpoints/
 *.pkl
 *.zip
 misc
+*.glb
 
 # 5. 忽略虚拟环境
 venv/

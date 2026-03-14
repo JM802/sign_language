@@ -119,7 +119,7 @@ def export_glb_sequence(word_dir, output_folder):
     else:
         v_r_global_orig = None
         
-    if has_l:
+    if has_l:   
         global_offset_l = get_global_offset_from_meta(meta_path_l, len(v_l_local))
         v_l_global_orig = v_l_local + global_offset_l[:, None, :]
     else:
