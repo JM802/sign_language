@@ -1,0 +1,72 @@
+[
+  {
+    "name": "baseline",
+    "rot_smooth": 0.82,
+    "wrist_stability": 0.65,
+    "finger_follow_hand": false,
+    "log_path": "f:\\sign_language\\new_sign_python\\sweep_logs_20260322\\baseline.log",
+    "frames_captured": 15,
+    "fallback_total": 49,
+    "fallback_watch_bones": 23,
+    "wrist_avg_delta": 7.5918,
+    "wrist_max_delta": 17.1131,
+    "finger_avg_delta": 2.0104,
+    "finger_max_delta": 7.161
+  },
+  {
+    "name": "more_responsive",
+    "rot_smooth": 0.78,
+    "wrist_stability": 0.65,
+    "finger_follow_hand": false,
+    "log_path": "f:\\sign_language\\new_sign_python\\sweep_logs_20260322\\more_responsive.log",
+    "frames_captured": 15,
+    "fallback_total": 49,
+    "fallback_watch_bones": 23,
+    "wrist_avg_delta": 8.6939,
+    "wrist_max_delta": 20.6733,
+    "finger_avg_delta": 2.3847,
+    "finger_max_delta": 8.7472
+  },
+  {
+    "name": "more_stable",
+    "rot_smooth": 0.86,
+    "wrist_stability": 0.8,
+    "finger_follow_hand": false,
+    "log_path": "f:\\sign_language\\new_sign_python\\sweep_logs_20260322\\more_stable.log",
+    "frames_captured": 15,
+    "fallback_total": 48,
+    "fallback_watch_bones": 23,
+    "wrist_avg_delta": 6.7654,
+    "wrist_max_delta": 12.1187,
+    "finger_avg_delta": 1.6157,
+    "finger_max_delta": 5.5182
+  },
+  {
+    "name": "finger_follow",
+    "rot_smooth": 0.82,
+    "wrist_stability": 0.65,
+    "finger_follow_hand": true,
+    "log_path": "f:\\sign_language\\new_sign_python\\sweep_logs_20260322\\finger_follow.log",
+    "frames_captured": 15,
+    "fallback_total": 82,
+    "fallback_watch_bones": 27,
+    "wrist_avg_delta": 7.5918,
+    "wrist_max_delta": 17.1131,
+    "finger_avg_delta": 16.509,
+    "finger_max_delta": 33.5243
+  },
+  {
+    "name": "balanced_stable",
+    "rot_smooth": 0.8,
+    "wrist_stability": 0.75,
+    "finger_follow_hand": false,
+    "log_path": "f:\\sign_language\\new_sign_python\\sweep_logs_20260322\\balanced_stable.log",
+    "frames_captured": 15,
+    "fallback_total": 48,
+    "fallback_watch_bones": 23,
+    "wrist_avg_delta": 7.8683,
+    "wrist_max_delta": 17.795,
+    "finger_avg_delta": 2.2004,
+    "finger_max_delta": 7.9633
+  }
+]

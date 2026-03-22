@@ -1,0 +1,26 @@
+[
+  {
+    "name": "old_like_auto",
+    "axis_strategy": "auto",
+    "allow_runtime_axis_fallback": true,
+    "log_path": "f:\\sign_language\\new_sign_python\\rewrite_step1_logs\\old_like_auto.log",
+    "fallback_total": 23,
+    "auto_locked_count": 20,
+    "wrist_avg_delta": 7.5918,
+    "wrist_max_delta": 17.1131,
+    "finger_avg_delta": 2.0104,
+    "finger_max_delta": 7.161
+  },
+  {
+    "name": "step1_static",
+    "axis_strategy": "static",
+    "allow_runtime_axis_fallback": false,
+    "log_path": "f:\\sign_language\\new_sign_python\\rewrite_step1_logs\\step1_static.log",
+    "fallback_total": 0,
+    "auto_locked_count": 0,
+    "wrist_avg_delta": 6.6324,
+    "wrist_max_delta": 17.1131,
+    "finger_avg_delta": 1.347,
+    "finger_max_delta": 6.1254
+  }
+]

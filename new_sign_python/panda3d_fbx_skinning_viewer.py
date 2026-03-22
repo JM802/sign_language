@@ -170,6 +170,39 @@ RIGHT_FORWARD_AXIS: Dict[str, Vec3] = {
 }
 
 
+def _mirror_bone_map(left_map: Dict[str, float | str]) -> Dict[str, float | str]:
+    return {name.replace("L_", "R_", 1): value for name, value in left_map.items()}
+
+
+# Static per-bone pose variants derived from repeatable auto-calibration results for this FBX rig.
+LEFT_AXIS_SIGN: Dict[str, float] = {
+    "L_Wrist": 1.0,
+    "L_ThumbMetacarpal": -1.0,
+    "L_ThumbProximal": 1.0,
+    "L_ThumbDistal": 1.0,
+    "L_IndexMetacarpal": 1.0,
+    "L_IndexProximal": -1.0,
+    "L_IndexIntermediate": -1.0,
+    "L_IndexDistal": 1.0,
+    "L_MiddleMetacarpal": 1.0,
+    "L_MiddleProximal": -1.0,
+    "L_MiddleIntermediate": 1.0,
+    "L_MiddleDistal": 1.0,
+    "L_RingMetacarpal": 1.0,
+    "L_RingProximal": -1.0,
+    "L_RingIntermediate": 1.0,
+    "L_RingDistal": 1.0,
+    "L_LittleMetacarpal": 1.0,
+    "L_LittleProximal": -1.0,
+    "L_LittleIntermediate": 1.0,
+    "L_LittleDistal": 1.0,
+}
+RIGHT_AXIS_SIGN: Dict[str, float] = _mirror_bone_map(LEFT_AXIS_SIGN)
+
+LEFT_AXIS_ORDER: Dict[str, str] = {name: "r*rest" for name in LEFT_AXIS_SIGN.keys()}
+RIGHT_AXIS_ORDER: Dict[str, str] = _mirror_bone_map(LEFT_AXIS_ORDER)
+
+
 class FBXHandRig:
     def __init__(
         self,
@@ -184,8 +217,10 @@ class FBXHandRig:
         root_motion_scale: float,
         bone_forward: Vec3,
         forward_mode: str = "table",
+        axis_strategy: str = "static",
         finger_follow_hand: bool = False,
         axis_calibration_frames: int = 6,
+        allow_runtime_axis_fallback: bool = False,
         debug_dump: bool = False,
         debug_max_frames: int = 2,
         debug_bones: Set[str] | None = None,
@@ -203,18 +238,20 @@ class FBXHandRig:
         self.debug_max_frames = max(0, int(debug_max_frames))
         self.debug_bones = debug_bones or set()
         self.forward_mode = forward_mode
+        self.axis_strategy = axis_strategy
         self.finger_follow_hand = finger_follow_hand
         self.axis_calibration_frames = max(1, int(axis_calibration_frames))
+        self.allow_runtime_axis_fallback = allow_runtime_axis_fallback
 
         self.mapping = LANDMARK_TO_BONE_SEQ_LEFT if is_left else LANDMARK_TO_BONE_SEQ_RIGHT
         self.bone_forward = Vec3(bone_forward)
         self.joints: Dict[str, NodePath] = {}
         self.rest_quat: Dict[str, Quat] = {}
-        self.prev_quat: Dict[str, Quat] = {}
+        self.prev_hpr: Dict[str, Vec3] = {}
         self.local_fwd: Dict[str, Vec3] = {}
         self.axis_sign: Dict[str, float] = {}
         self.axis_order: Dict[str, str] = {}
-        self.axis_calibrated = False
+        self.axis_calibrated = axis_strategy != "auto"
         self.axis_calibration_seen = 0
         self.axis_scores: Dict[str, Dict[Tuple[float, str], List[float]]] = collections.defaultdict(
             lambda: collections.defaultdict(lambda: [0.0, 0.0])
@@ -243,22 +280,29 @@ class FBXHandRig:
         for bone, node in self.joints.items():
             q = Quat(node.getQuat(self.actor_root))
             self.rest_quat[bone] = q
-            self.prev_quat[bone] = Quat(q)
+            hpr = node.getHpr(self.actor_root)
+            self.prev_hpr[bone] = Vec3(hpr.x, hpr.y, hpr.z)
 
         self._init_local_forward_axes()
         self._init_rest_palm_frame()
-        for bone in self.joints.keys():
-            self.axis_sign[bone] = 1.0
-            self.axis_order[bone] = "r*rest"
+        self._init_axis_variants()
         if self.debug_dump:
             side = "Left" if self.is_left else "Right"
             print(
-                f"[debug][{side}] init bone_forward={tuple(round(v,4) for v in (self.bone_forward.x, self.bone_forward.y, self.bone_forward.z))}",
+                f"[debug][{side}] init bone_forward={tuple(round(v,4) for v in (self.bone_forward.x, self.bone_forward.y, self.bone_forward.z))} "
+                f"axis_strategy={self.axis_strategy} runtime_fallback={self.allow_runtime_axis_fallback}",
                 flush=True,
             )
             for bone in sorted(self.local_fwd.keys()):
                 lv = self.local_fwd[bone]
                 print(f"[debug][{side}] local_fwd {bone} = ({lv.x:.4f}, {lv.y:.4f}, {lv.z:.4f})", flush=True)
+
+    def _init_axis_variants(self) -> None:
+        sign_table = LEFT_AXIS_SIGN if self.is_left else RIGHT_AXIS_SIGN
+        order_table = LEFT_AXIS_ORDER if self.is_left else RIGHT_AXIS_ORDER
+        for bone in self.joints.keys():
+            self.axis_sign[bone] = float(sign_table.get(bone, 1.0))
+            self.axis_order[bone] = str(order_table.get(bone, "r*rest"))
 
     def _init_local_forward_axes(self) -> None:
         if self.forward_mode == "table":
@@ -437,7 +481,7 @@ class FBXHandRig:
         if base_q is None:
             return
         # Runtime safeguard: if preferred axis becomes opposite to target direction, fallback to best current variant.
-        if base_dot < 0.10:
+        if self.allow_runtime_axis_fallback and base_dot < 0.10:
             best_q, best_fwd, best_order, best_dot, best_sign = self._choose_pose_variant(
                 bone_name=bone_name,
                 hand_q=hand_q,
@@ -475,33 +519,23 @@ class FBXHandRig:
         if "Wrist" in bone_name:
             alpha *= (1.0 - 0.7 * self.wrist_stability)
         alpha = max(0.02, min(1.0, alpha))
-        # Quaternion-only smoothing (NLERP) to avoid Euler wrap/gimbal flips.
-        prev_q = self.prev_quat.get(bone_name, target_q)
-        dot = (
-            prev_q.getR() * target_q.getR()
-            + prev_q.getI() * target_q.getI()
-            + prev_q.getJ() * target_q.getJ()
-            + prev_q.getK() * target_q.getK()
-        )
-        if dot < 0.0:
-            target_q = Quat(-target_q.getR(), -target_q.getI(), -target_q.getJ(), -target_q.getK())
 
-        smoothed_q = Quat(
-            prev_q.getR() + (target_q.getR() - prev_q.getR()) * alpha,
-            prev_q.getI() + (target_q.getI() - prev_q.getI()) * alpha,
-            prev_q.getJ() + (target_q.getJ() - prev_q.getJ()) * alpha,
-            prev_q.getK() + (target_q.getK() - prev_q.getK()) * alpha,
+        target_hpr = target_q.getHpr()
+        prev_hpr = self.prev_hpr.get(bone_name, target_hpr)
+        smoothed_hpr = Vec3(
+            self._lerp_angle(prev_hpr.x, target_hpr.x, alpha),
+            self._lerp_angle(prev_hpr.y, target_hpr.y, alpha),
+            self._lerp_angle(prev_hpr.z, target_hpr.z, alpha),
         )
-        smoothed_q.normalize()
-        self.prev_quat[bone_name] = Quat(smoothed_q)
+        self.prev_hpr[bone_name] = smoothed_hpr
+        smoothed_q = Quat()
+        smoothed_q.setHpr(smoothed_hpr)
         joint.setQuat(self.actor_root, smoothed_q)
 
         do_debug_frame = self.debug_dump and (frame_idx < 0 or frame_idx < self.debug_max_frames)
         do_debug_bone = (not self.debug_bones) or (bone_name in self.debug_bones)
         if do_debug_frame and do_debug_bone:
             side = "Left" if self.is_left else "Right"
-            target_hpr = target_q.getHpr()
-            smoothed_hpr = smoothed_q.getHpr()
             print(
                 f"[debug][{side}][frame {frame_idx}] bone={bone_name} "
                 f"alpha={alpha:.3f} "
@@ -701,7 +735,9 @@ class FBXSkinningViewer(ShowBase):
         wrist_stability: float,
         bone_forward: Vec3,
         forward_mode: str,
+        axis_strategy: str,
         finger_follow_hand: bool,
+        allow_runtime_axis_fallback: bool,
         debug_dump: bool,
         debug_max_frames: int,
         debug_bones: Set[str],
@@ -743,7 +779,9 @@ class FBXSkinningViewer(ShowBase):
             root_motion_scale=root_motion_scale,
             bone_forward=bone_forward,
             forward_mode=forward_mode,
+            axis_strategy=axis_strategy,
             finger_follow_hand=finger_follow_hand,
+            allow_runtime_axis_fallback=allow_runtime_axis_fallback,
             debug_dump=debug_dump,
             debug_max_frames=debug_max_frames,
             debug_bones=debug_bones,
@@ -760,7 +798,9 @@ class FBXSkinningViewer(ShowBase):
             root_motion_scale=root_motion_scale,
             bone_forward=bone_forward,
             forward_mode=forward_mode,
+            axis_strategy=axis_strategy,
             finger_follow_hand=finger_follow_hand,
+            allow_runtime_axis_fallback=allow_runtime_axis_fallback,
             debug_dump=debug_dump,
             debug_max_frames=debug_max_frames,
             debug_bones=debug_bones,
@@ -957,10 +997,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Use measured per-bone axis table or one uniform axis for all bones",
     )
     p.add_argument(
+        "--axis-strategy",
+        choices=["static", "auto"],
+        default="static",
+        help="Static uses rig-specific locked sign/order defaults; auto re-learns them at runtime",
+    )
+    p.add_argument(
         "--finger-follow-hand",
         action=argparse.BooleanOptionalAction,
         default=False,
         help="If true, apply palm global rotation to finger base orientation too",
+    )
+    p.add_argument(
+        "--allow-runtime-axis-fallback",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Allow per-frame sign/order fallback when the preferred axis variant points away from the target",
     )
     p.add_argument("--debug-dump", action="store_true", help="Print detailed per-frame and per-bone debug data")
     p.add_argument("--debug-max-frames", type=int, default=2, help="How many initial frames to print in debug mode")
@@ -992,7 +1044,9 @@ def main() -> None:
             f"model_scale={args.model_scale} landmark_scale={args.landmark_scale} "
             f"root_motion_scale={args.root_motion_scale} pos_smooth={args.pos_smooth} "
             f"rot_smooth={args.rot_smooth} wrist_stability={args.wrist_stability} "
-            f"forward_mode={args.forward_mode} finger_follow_hand={args.finger_follow_hand} "
+            f"forward_mode={args.forward_mode} axis_strategy={args.axis_strategy} "
+            f"allow_runtime_axis_fallback={args.allow_runtime_axis_fallback} "
+            f"finger_follow_hand={args.finger_follow_hand} "
             f"bone_forward={args.bone_forward} debug_max_frames={args.debug_max_frames} "
             f"debug_bones={sorted(debug_bones) if debug_bones else 'ALL'}"
         , flush=True)
@@ -1011,7 +1065,9 @@ def main() -> None:
         wrist_stability=args.wrist_stability,
         bone_forward=bone_forward,
         forward_mode=args.forward_mode,
+        axis_strategy=args.axis_strategy,
         finger_follow_hand=args.finger_follow_hand,
+        allow_runtime_axis_fallback=args.allow_runtime_axis_fallback,
         debug_dump=args.debug_dump,
         debug_max_frames=args.debug_max_frames,
         debug_bones=debug_bones,
