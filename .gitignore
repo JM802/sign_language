@@ -39,3 +39,9 @@ node_modules/
 unity_asl/
 
 asl_first20_jsonl
+
+node_modules/
+**/node_cache/
+**/_cacache/
+
+frontend/F:/nodejs/node_cache/_update-notifier-last-checked
