@@ -6,8 +6,12 @@ import random
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
-
+from scipy.signal import savgol_filter
 import cv2
+import numpy as np
+
+import mediapipe as mp
+mp_hands = mp.solutions.hands
 
 
 @dataclass
@@ -110,12 +114,6 @@ def _interpolate_missing_hands(frames: List[Dict[str, Any]], max_gap: int) -> Li
 
 
 def _smooth_landmarks_savgol(frames: List[Dict[str, Any]], window: int = 7, poly: int = 2) -> List[Dict[str, Any]]:
-    try:
-        from scipy.signal import savgol_filter
-    except ImportError as exc:
-        raise RuntimeError("scipy is required: pip install scipy") from exc
-
-    import numpy as np
 
     total = len(frames)
     win = min(window, total if total % 2 == 1 else total - 1)
@@ -176,10 +174,6 @@ def extract_frames_from_video(
     interpolate_max_gap: int,
     swap_handedness: bool,
 ) -> Dict[str, Any]:
-    try:
-        from mediapipe.python.solutions import hands as mp_hands
-    except ImportError as exc:
-        raise RuntimeError("mediapipe is required: pip install mediapipe") from exc
 
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():

@@ -20,7 +20,7 @@ CORS(app, resources={
 })
 
 # 配置
-GLB_ROOT = config.GLB_ROOT
+ALS_JSON_PATH = config.ASL_JSON_ROOT
 
 # 复用 inference_camera.py 的完整推理流水线
 # 包含：模型加载、归一化统计量、标签映射、平滑器
@@ -125,7 +125,7 @@ def downloads():
 
 @app.route('/result_3d/glb_models/<path:filename>')
 def serve_glb(filename):
-    return send_from_directory(GLB_ROOT, filename)
+    return send_from_directory(ALS_JSON_PATH, filename)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)

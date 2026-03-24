@@ -23,7 +23,7 @@ STD_PATH=os.getenv("STD_PATH", os.path.join(DATA_ROOT, "global_std_300_double_ve
 
 IDX2NAME_PATH=os.getenv("IDX2NAME_PATH", os.path.join(DATA_ROOT, "idx2name_300.txt"))
 
-GLB_ROOT=os.getenv("GLB_ROOT", "f:/sign_language/result_3d/glb_models")
+ASL_JSON_ROOT="/home/jm802/sign_language/new_sign_python/asl_300"
 
 # Handle .env file location: check backend dir first, then project root (where docker-compose expects it)
 local_env = os.path.join(BASE_DIR, "backend", ".env")

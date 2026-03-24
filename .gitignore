@@ -38,10 +38,12 @@ node_modules/
 **/.env
 unity_asl/
 
-asl_first20_jsonl
+asl_first20_jsonl/
+asl_300/
 
 node_modules/
 **/node_cache/
 **/_cacache/
 
 frontend/F:/nodejs/node_cache/_update-notifier-last-checked
+/home/jm802/sign_language/frontend/F:\nodejs\node_cache
