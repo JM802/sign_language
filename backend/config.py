@@ -23,7 +23,10 @@ STD_PATH=os.getenv("STD_PATH", os.path.join(DATA_ROOT, "global_std_300_double_ve
 
 IDX2NAME_PATH=os.getenv("IDX2NAME_PATH", os.path.join(DATA_ROOT, "idx2name_300.txt"))
 
-ASL_JSON_ROOT="/home/jm802/sign_language/new_sign_python/asl_300"
+ASL_JSON_ROOT = os.getenv("ASL_JSON_ROOT", r"F:\sign_language\data\ASL_300_JSON")
+ASL_300_VIDEO = os.getenv("ASL_300_VIDEO", r"F:\sign_language\data\ALS_300_VIDEO")
+ASL_JSON_ROUTE = os.getenv("ASL_JSON_ROUTE", "/asl_json")
+ASL_VIDEO_ROUTE = os.getenv("ASL_VIDEO_ROUTE", "/asl_video")
 
 # Handle .env file location: check backend dir first, then project root (where docker-compose expects it)
 local_env = os.path.join(BASE_DIR, "backend", ".env")

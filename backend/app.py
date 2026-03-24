@@ -1,9 +1,6 @@
 import os
-import sys
 import cv2
 import tempfile
-import numpy as np
-import pymysql
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS 
 import config
@@ -21,10 +18,56 @@ CORS(app, resources={
 
 # 配置
 ALS_JSON_PATH = config.ASL_JSON_ROOT
+ASL_VIDEO_PATH = config.ASL_300_VIDEO
+ASL_JSON_ROUTE = config.ASL_JSON_ROUTE
+ASL_VIDEO_ROUTE = config.ASL_VIDEO_ROUTE
 
 # 复用 inference_camera.py 的完整推理流水线
 # 包含：模型加载、归一化统计量、标签映射、平滑器
 pipeline = SignLanguageInferencePipeline(model_path=config.MODEL_PATH)
+
+
+def _strip_prefix(filename: str) -> str:
+    if filename.startswith("unity_gesture_stream_"):
+        return filename[len("unity_gesture_stream_"):]
+    return filename
+
+
+def _extract_resource_stem(filename: str) -> str:
+    return os.path.splitext(_strip_prefix(filename))[0]
+
+
+def _extract_word_from_stem(stem: str) -> str:
+    if "-" in stem:
+        return stem.split("-", 1)[1].strip().upper()
+    return stem.strip().upper()
+
+
+def _build_asl_resource_index():
+    json_index = {}
+    video_index = {}
+
+    if os.path.isdir(ALS_JSON_PATH):
+        for filename in os.listdir(ALS_JSON_PATH):
+            if filename.lower().endswith(".jsonl"):
+                json_index[_extract_resource_stem(filename)] = filename
+
+    if os.path.isdir(ASL_VIDEO_PATH):
+        for filename in os.listdir(ASL_VIDEO_PATH):
+            if filename.lower().endswith((".mp4")):
+                video_index[_extract_resource_stem(filename)] = filename
+
+    pairs = []
+    for stem in sorted(set(json_index.keys()) & set(video_index.keys())):
+        pairs.append(
+            {
+                "stem": stem,
+                "word": _extract_word_from_stem(stem),
+                "json_filename": json_index[stem],
+                "video_filename": video_index[stem],
+            }
+        )
+    return pairs
 
 
 @app.route('/api/sign/predict', methods=['POST'])
@@ -90,42 +133,58 @@ def predict():
         })
 
     finally:
-        os.unlink(tmp_path)  # 清理临时文件
+        os.unlink(tmp_path)
 
-@app.route('/api/sign/downloads', methods=['GET'])
-def downloads():
+@app.route('/api/sign/resources', methods=['GET'])
+def get_resources():
     word = request.args.get('name')
+    if not word:
+        return jsonify({"code": 400, "msg": "Missing query parameter: name"}), 400
 
-    # 在这里转为大写，去匹配数据库
     word_query = word.strip().upper()
+    matched_pairs = []
 
-    # 从 MySQL 查文件夹名
-    conn = pymysql.connect(**DB_CONFIG, cursorclass=pymysql.cursors.DictCursor)
-    with conn.cursor() as cursor:
-        cursor.execute("SELECT folder_name FROM sign_assets WHERE word_name = %s", (word_query,))
-        row = cursor.fetchone()
-    conn.close()
+    for item in _build_asl_resource_index():
+        if item["word"] != word_query:
+            continue
 
-    if not row:
+        json_stem = _extract_resource_stem(item["json_filename"])
+        video_stem = _extract_resource_stem(item["video_filename"])
+        if json_stem != video_stem:
+            continue
+
+        matched_pairs.append(
+            {
+                "stem": item["stem"],
+                "word": item["word"],
+                "json_url": f"http://{request.host}{ASL_JSON_ROUTE}/{item['json_filename']}",
+                "video_url": f"http://{request.host}{ASL_VIDEO_ROUTE}/{item['video_filename']}",
+            }
+        )
+
+    if not matched_pairs:
         return jsonify({"code": 404, "msg": "Resource not found"}), 404
 
-    folder = row['folder_name']
-    abs_path = os.path.join(GLB_ROOT, folder)
-    
-    # 递归/遍历所有 .glb
-    urls = []
-    for root, _, files in os.walk(abs_path):
-        for f in files:
-            if f.endswith('.glb'):
-                rel = os.path.relpath(os.path.join(root, f), GLB_ROOT)
-                urls.append(f"http://{request.host}/result_3d/glb_models/{rel}")
-    
-    urls.sort() # 确保帧顺序
-    return jsonify({"code": 200, "data": {"urls": urls}})
+    return jsonify(
+        {
+            "code": 200,
+            "data": {
+                "word": word_query,
+                "count": len(matched_pairs),
+                "items": matched_pairs,
+            },
+        }
+    )
 
-@app.route('/result_3d/glb_models/<path:filename>')
-def serve_glb(filename):
+
+@app.route(f'{ASL_JSON_ROUTE}/<path:filename>')
+def serve_asl_json(filename):
     return send_from_directory(ALS_JSON_PATH, filename)
+
+
+@app.route(f'{ASL_VIDEO_ROUTE}/<path:filename>')
+def serve_asl_video(filename):
+    return send_from_directory(ASL_VIDEO_PATH, filename)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
