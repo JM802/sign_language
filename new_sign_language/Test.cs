@@ -9,9 +9,8 @@ using System.Threading;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.Android;
+using UnityEngine.Video;
 using System.Linq;
-using Unity.XR.XREAL;
-using Unity.XR.XREAL.Samples;
 using Unity.VisualScripting;
 
 [System.Serializable]
@@ -40,6 +39,12 @@ public class GestureData
     public HandData[] hands;
 }
 
+[System.Serializable]
+public class RawFrameMeta
+{
+    public int timestamp_ms;
+}
+
 public class Test : MonoBehaviour
 {
     public GameObject left_hand;
@@ -50,7 +55,7 @@ public class Test : MonoBehaviour
     public Text left_result;
     public Text right_result;
 
-    // Ëõ·Å²Ù×İ
+    // ç¼‚â•‚æ–é¿å¶‡æ—±
     public Vector3 LastLeftHandPosition;
     public Vector3 LastRightHandPosition;
     public Quaternion LastLeftHandRotation;
@@ -59,28 +64,30 @@ public class Test : MonoBehaviour
 
     public List<GameObject> left_points = new List<GameObject>();
     public List<GameObject> right_points = new List<GameObject>();
-    public List<GameObject> left_spheres = new List<GameObject>(); 
-    public List<GameObject> right_spheres = new List<GameObject>(); 
+    public List<GameObject> left_spheres = new List<GameObject>();
+    public List<GameObject> right_spheres = new List<GameObject>();
     public GameObject sphere;
 
     private List<Vector3> origin_leftRotations = new List<Vector3>();
     private List<Vector3> origin_rightRotations = new List<Vector3>();
 
-    // ÊÖÊÆÂË²¨£º»¬¶¯´°¿Ú¶àÊı±í¾ö
-    [SerializeField] private int gestureWindowSize = 8; // ´°¿Ú´óĞ¡£¨¿Éµ÷£¬3-7½ÏºÏÊÊ£©
-    private Queue<string> leftGestureHistory = new Queue<string>(); // ×óÊÖÊÖÊÆÀúÊ·
-    private Queue<string> rightGestureHistory = new Queue<string>(); // ÓÒÊÖÊÖÊÆÀúÊ·
-    private string filteredLeftGesture = ""; // ¹ıÂËºóµÄ×óÊÖÊÖÊÆ
-    private string filteredRightGesture = ""; // ¹ıÂËºóµÄÓÒÊÖÊÖÊÆ
+    // æ‰‹åŠ¿æ»¤æ³¢ï¼šæ»‘åŠ¨çª—å£å¤šæ•°è¡¨å†³
+    [SerializeField] private int gestureWindowSize = 8; // ç»æ¥€å½›æ¾¶Ñƒçš¬é”›å å½²ç’‹å†¿ç´3-7æˆå†¨æ‚é–«å‚¦ç´š
+    private Queue<string> leftGestureHistory = new Queue<string>(); // å®¸ï¸½å¢œéµå¬ªå¨é˜å——å½¶
+    private Queue<string> rightGestureHistory = new Queue<string>(); // é™è™«å¢œéµå¬ªå¨é˜å——å½¶
+    private string filteredLeftGesture = ""; // æ©å›¨æŠ¤éšåº£æ®‘å®¸ï¸½å¢œéµå¬ªå¨
+    private string filteredRightGesture = ""; // æ©å›¨æŠ¤éšåº£æ®‘é™è™«å¢œéµå¬ªå¨
 
-    // ¿¨¶ûÂüÂË²¨
+    // å¡å°”æ›¼æ»¤æ³¢
     private HandLandmarkFilter landmarkFilter;
 
-    // ÍøÂçÅäÖÃ
+    // ç¼ƒæˆ ç²¶é–°å¶‡ç–†
     [SerializeField] private string serverIP = "117.50.46.14";
     [SerializeField] private int serverPort = 8080;
+    [SerializeField] private bool useOfflineGestureStream = true;
+    [SerializeField] private string offlineGestureStreamPath = @"D:\FrontEndSrc\sign_language\new_sign_python\unity_gesture_stream_000017451997373907346-LIBRARY.jsonl";
 
-    // ÉãÏñÍ·ºÍÍøÂçÏà¹Ø
+    // é½å‹«å„šæ¾¶æ‘æ‹°ç¼ƒæˆ ç²¶é©ç¨¿å§
     private WebCamTexture webcamTexture;
     public RGBCameraExample arCamera;
     public RawImage arCameraImage;
@@ -92,56 +99,169 @@ public class Test : MonoBehaviour
     private bool isRunning = false;
     private bool disconnecting = false;
 
-    // Ö¡Êı¾İ¶ÓÁĞ£¨Ïß³Ì°²È«£©
+    // å¸§æ•°æ®é˜Ÿåˆ—ï¼ˆçº¿ç¨‹å®‰å…¨ï¼‰
     private readonly Queue<byte[]> frameQueue = new Queue<byte[]>();
     private readonly object queueLock = new object();
 
-    // Í¼ÏñÑ¹ËõÖÊÁ¿
+    // é¥æƒ§å„šé˜å¬¬ç¼‰ç’ã„©å™º
     [Range(10, 100)]
     [SerializeField] private int jpegQuality = 100;
 
-    // Ö¡´¦Àí¼ä¸ô£¨ºÁÃë£©
+    // å¸§å¤„ç†é—´éš”ï¼ˆæ¯«ç§’ï¼‰
     [SerializeField] private int frameInterval = 33;
     private float lastFrameTime = 0;
 
-    // ±ê¼ÇÊÇ·ñĞèÒª²¶»ñÖ¡
+    // éå›ªî†‡é„îˆšæƒé—‡â‚¬ç‘•ä½¹å´Ÿé‘¾å³°æŠš
     private bool captureThisFrame = false;
     private Texture2D texture;
 
     [SerializeField] private Texture2D testImage;
 
-    // È¨ÏŞÇëÇóÏà¹Ø
+    // é‰å†®æªºç’‡é”‹çœ°é©ç¨¿å§
     private bool permissionGranted = false;
     private bool permissionRequested = false;
 
-    // ĞÂÔö£º½ÓÊÕÏß³ÌºÍÏà¹Ø±äÁ¿
     private Thread receiveThread;
     private bool isReceiving = false;
+    private Coroutine offlinePlaybackCoroutine;
+
+    public VideoPlayer videoPlayer;  // æ‹–å…¥Unityçš„VideoPlayerç»„ä»¶
+    private GestureData[] cachedFrames;
+    private int[] frameTimestamps;
 
     void Start()
     {
-        // ¼ì²é²¢ÇëÇóÉãÏñÍ·È¨ÏŞ
-        CheckCameraPermission();
-
-        // È·±£Ö÷Ïß³Ìµ÷¶ÈÆ÷´æÔÚ
         if (UnityMainThreadDispatcher.Instance == null)
         {
             new GameObject("UnityMainThreadDispatcher").AddComponent<UnityMainThreadDispatcher>();
         }
 
-        // ³õÊ¼»¯ÂË²¨Æ÷£¬¿Éµ÷ÕûÔëÉù²ÎÊı
         landmarkFilter = new HandLandmarkFilter(0.008f, 0.03f);
 
-        for(int i = 0;i<left_points.Count;i++)
+        for (int i = 0; i < left_points.Count; i++)
         {
             origin_leftRotations.Add(left_points[i].transform.localEulerAngles);
             origin_rightRotations.Add(right_points[i].transform.localEulerAngles);
         }
+
+        left_spheres.Reverse();
+        right_spheres.Reverse();
+
+        if (useOfflineGestureStream)
+        {
+            PreloadGestureFrames();
+            if (videoPlayer != null)
+            {
+                videoPlayer.Play();
+            }
+            return;
+        }
+
+        CheckCameraPermission();
+    }
+
+    void PreloadGestureFrames()
+    {
+        if (!File.Exists(offlineGestureStreamPath))
+        {
+            Debug.LogError("æ‰¾ä¸åˆ°æ–‡ä»¶: " + offlineGestureStreamPath);
+            return;
+        }
+
+        string[] lines = File.ReadAllLines(offlineGestureStreamPath, Encoding.UTF8);
+        cachedFrames = new GestureData[lines.Length];
+        frameTimestamps = new long[lines.Length];
+
+        for (int i = 0; i < lines.Length; i++)
+        {
+            if (string.IsNullOrWhiteSpace(lines[i]))
+            {
+                continue;
+            }
+
+            try
+            {
+                RawFrameMeta meta = JsonUtility.FromJson<RawFrameMeta>(lines[i]);
+                frameTimestamps[i] = meta != null ? meta.timestamp_ms : i * 33L;
+
+                cachedFrames[i] = JsonUtility.FromJson<GestureData>(lines[i]);
+                if (cachedFrames[i] != null && cachedFrames[i].hands == null)
+                {
+                    cachedFrames[i].hands = new HandData[0];
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        Debug.Log($"é¢„åŠ è½½å®Œæˆï¼Œå…± {lines.Length} å¸§");
+    }
+
+    void StartOfflineGesturePlayback()
+    {
+        if (string.IsNullOrWhiteSpace(offlineGestureStreamPath))
+        {
+            Debug.LogError("Offline gesture stream path is empty.");
+            return;
+        }
+
+        if (!File.Exists(offlineGestureStreamPath))
+        {
+            Debug.LogError("Offline gesture stream file not found: " + offlineGestureStreamPath);
+            return;
+        }
+
+        string[] lines = File.ReadAllLines(offlineGestureStreamPath, Encoding.UTF8);
+        offlinePlaybackCoroutine = StartCoroutine(PlayOfflineGestureStream(lines));
+        Debug.Log("Started offline gesture playback: " + offlineGestureStreamPath);
+    }
+
+    IEnumerator PlayOfflineGestureStream(string[] lines)
+    {
+        float delaySeconds = Mathf.Max(frameInterval, 1) / 1000f;
+
+        foreach (string rawLine in lines)
+        {
+            if (disconnecting)
+            {
+                yield break;
+            }
+
+            if (string.IsNullOrWhiteSpace(rawLine))
+            {
+                yield return new WaitForSeconds(delaySeconds);
+                continue;
+            }
+
+            GestureData gestureData = JsonUtility.FromJson<GestureData>(rawLine);
+            if (gestureData == null)
+            {
+                Debug.LogWarning("Failed to parse offline gesture line.");
+                yield return new WaitForSeconds(delaySeconds);
+                continue;
+            }
+
+            if (gestureData.hands == null)
+            {
+                gestureData.hands = new HandData[0];
+            }
+
+            ProcessGestureData(gestureData);
+            yield return new WaitForSeconds(delaySeconds);
+        }
+
+        Debug.Log("Offline gesture playback finished.");
     }
 
     void CheckCameraPermission()
     {
-        // ¼ì²éÊÇ·ñÓĞÉãÏñÍ·È¨ÏŞ
+        if (useOfflineGestureStream)
+        {
+            return;
+        }
+
+        // æ£€æŸ¥æ˜¯å¦æœ‰æ‘„åƒå¤´æƒé™
         if (Permission.HasUserAuthorizedPermission(Permission.Camera))
         {
             permissionGranted = true;
@@ -150,7 +270,7 @@ public class Test : MonoBehaviour
         }
         else
         {
-            // ÇëÇóÉãÏñÍ·È¨ÏŞ
+            // è¯·æ±‚æ‘„åƒå¤´æƒé™
             if (!permissionRequested)
             {
                 permissionRequested = true;
@@ -161,7 +281,34 @@ public class Test : MonoBehaviour
 
     void Update()
     {
-        // ¼ì²éÈ¨ÏŞÇëÇó½á¹û
+        if (useOfflineGestureStream)
+        {
+            if (cachedFrames != null)
+            {
+                int currentMs;
+                if (videoPlayer != null && videoPlayer.isPrepared)
+                {
+                    currentMs = (int)(videoPlayer.time * 1000.0);
+                }
+                else
+                {
+                    currentMs = (int)(Time.time * 1000.0);
+                }
+
+                int best = FindClosestFrame(currentMs);
+                if (frameTimestamps != null && currentMs > frameTimestamps[frameTimestamps.Length - 1] + 200)
+                {
+                    left_hand.SetActive(false);
+                    right_hand.SetActive(false);
+                }
+                else if (best >= 0 && cachedFrames[best] != null)
+                {
+                    ProcessGestureData(cachedFrames[best]);
+                }
+            }
+            return;
+        }
+
         if (!permissionGranted && permissionRequested)
         {
             if (Permission.HasUserAuthorizedPermission(Permission.Camera))
@@ -172,15 +319,11 @@ public class Test : MonoBehaviour
             }
         }
 
-        // ½öÔÚÖ÷Ïß³ÌÖĞ´¦ÀíÉãÏñÍ·ºÍÎÆÀí
         if (isRunning && !disconnecting)
         {
-            // ¿ØÖÆÖ¡ÂÊ
             if (Time.time - lastFrameTime >= frameInterval / 1000f)
             {
                 lastFrameTime = Time.time;
-
-                // ±ê¼ÇĞèÒª²¶»ñµ±Ç°Ö¡
                 captureThisFrame = true;
             }
         }
@@ -192,36 +335,37 @@ public class Test : MonoBehaviour
         }
     }
 
-    void InitializeWebcam()
+    int FindClosestFrame(int targetMs)
     {
-        // ÔÚAndroidÉÏ£¬ĞèÒªÈ·±£ÔÚÈ¨ÏŞ»ñÈ¡ºóÖ´ĞĞ
-        if (!permissionGranted)
+        if (frameTimestamps == null || frameTimestamps.Length == 0)
         {
-            return;
+            return -1;
         }
 
-        // »ñÈ¡¿ÉÓÃÉãÏñÍ·ÁĞ±í
-        WebCamDevice[] devices = WebCamTexture.devices;
-        if (devices.Length == 0)
+        int lo = 0;
+        int hi = frameTimestamps.Length - 1;
+        int best = 0;
+        while (lo <= hi)
         {
-            return;
+            int mid = (lo + hi) / 2;
+            if (frameTimestamps[mid] <= targetMs)
+            {
+                best = mid;
+                lo = mid + 1;
+            }
+            else
+            {
+                hi = mid - 1;
+            }
         }
-
-        // Ê¹ÓÃµÚÒ»¸öÉãÏñÍ·
-        webcamTexture = new WebCamTexture(devices[0].name, 800, 400, 30);
-        webcamTexture.Play();
-
-        // ´´½¨Ò»´ÎTexture2DÊµÀı
-        texture = new Texture2D(arCameraImage.texture.width, arCameraImage.texture.height, ((Texture2D)arCameraImage.texture).format, true);
-
-        Debug.Log(texture.width + " " + texture.height);
+        return best;
     }
 
     void CaptureFrame()
     {
         //Debug.Log("capture");
         //byte[] frameData = testImage.EncodeToJPG(jpegQuality);
-        // ±àÂëÎªJPEG£¨±ØĞëÔÚÖ÷Ïß³Ì£©
+        // ç¼‚æ «çˆœæ¶“ç¯”PEGé”›å ç¹€æ¤¤è¯²æ¹ªæ¶“è¤åšç»‹å¬¶ç´š
         if (arCamera.y_texture == null) { return; }
 
         int width = arCamera.y_texture.width;
@@ -229,19 +373,19 @@ public class Test : MonoBehaviour
         //int width = 640;
         //int height = 480;
 
-        // È·±£ÎÒÃÇÓĞÒ»¸öºÏÊÊµÄTexture2DÓÃÓÚ²¶»ñ
-        // È·±£ÎÒÃÇÓĞÒ»¸öºÏÊÊµÄRenderTextureÓÃÓÚCompute ShaderÊä³ö
+        // çº­î†»ç¹šé´æˆœæ»‘éˆå¤‰ç«´æ¶“î„æ‚é–«å‚œæ®‘Texture2Dé¢ã„¤ç°¬é¹æ›¡å¹
+        // çº­î†»ç¹šé´æˆœæ»‘éˆå¤‰ç«´æ¶“î„æ‚é–«å‚œæ®‘RenderTextureé¢ã„¤ç°¬Compute Shaderæˆæ’³åš­
         if (arCameraTexture == null ||
             arCameraTexture.width != width ||
             arCameraTexture.height != height)
         {
-            // ÊÍ·Å¾ÉÎÆÀí
+            // é‡Šæ”¾æ—§çº¹ç†
             if (arCameraTexture != null)
             {
                 RenderTexture.ReleaseTemporary(arCameraTexture);
             }
 
-            // ´´½¨Ö§³ÖUAVµÄäÖÈ¾ÎÆÀí£¨¹Ø¼üĞŞ¸Ä£©
+            // åˆ›å»ºæ”¯æŒ UAV çš„æ¸²æŸ“çº¹ç†
             arCameraTexture = RenderTexture.GetTemporary(
                 width,
                 height,
@@ -249,8 +393,8 @@ public class Test : MonoBehaviour
                 RenderTextureFormat.ARGB32,
                 RenderTextureReadWrite.Linear
             );
-            arCameraTexture.enableRandomWrite = true; // ÔÊĞíËæ»úĞ´Èë
-            //arCameraTexture.creationFlags = RenderTextureCreationFlags.UnorderedAccess; // ÆôÓÃUAV
+            arCameraTexture.enableRandomWrite = true; // éä½½î†é—…å¿”æº€éæ¬å†
+            //arCameraTexture.creationFlags = RenderTextureCreationFlags.UnorderedAccess; // éšîˆœæ•¤UAV
         }
 
         int kernelHandle = YUV2RGBShader.FindKernel("CSMain");
@@ -260,38 +404,38 @@ public class Test : MonoBehaviour
         YUV2RGBShader.SetTexture(kernelHandle, "VTexture", arCamera.v_texture);
         YUV2RGBShader.SetTexture(kernelHandle, "Result", arCameraTexture);
 
-        // ¼ÆËãÏß³Ì×éÊıÁ¿ (8x8Ïß³ÌÃ¿×é)
+        // è®¡ç®—çº¿ç¨‹ç»„æ•°é‡ (8x8 çº¿ç¨‹æ¯ç»„)
         int threadGroupsX = Mathf.CeilToInt(width / 8f);
         int threadGroupsY = Mathf.CeilToInt(height / 8f);
 
-        // Ö´ĞĞCompute Shader
+        // éµÑ†î”‘Compute Shader
         YUV2RGBShader.Dispatch(kernelHandle, threadGroupsX, threadGroupsY, 1);
 
-        // ´´½¨ÁÙÊ±Texture2DÓÃÓÚ¶ÁÈ¡ÏñËØ
+        // é’æ¶˜ç¼“æ¶“å­˜æ¤‚Texture2Dé¢ã„¤ç°¬ç’‡è¯²å½‡éå¿•ç¤Œ
         Texture2D tempTexture = new Texture2D(arCameraTexture.width, arCameraTexture.height, TextureFormat.RGBA32, false);
 
-        // ¼¤»îRenderTextureÒÔ±ã¶ÁÈ¡
+        // å©µâ‚¬å¨²ç±–enderTextureæµ ãƒ¤ç©¶ç’‡è¯²å½‡
         RenderTexture.active = arCameraTexture;
 
-        // ¶ÁÈ¡ÏñËØµ½Texture2D
+        // ç’‡è¯²å½‡éå¿•ç¤Œé’ç™Ÿexture2D
         tempTexture.ReadPixels(new Rect(0, 0, arCameraTexture.width, arCameraTexture.height), 0, 0);
         tempTexture.Apply();
 
-        // »Ö¸´RenderTexture×´Ì¬
+        // æ¢å¤ RenderTexture çŠ¶æ€
         RenderTexture.active = null;
 
-        // ±àÂëÎªJPG
+        // ç¼‚æ «çˆœæ¶“ç¯”PG
         byte[] frameData = tempTexture.EncodeToJPG();
 
-        Destroy(tempTexture); // Ïú»Ù Texture2D£¨±ØĞëÔÚÖ÷Ïß³Ìµ÷ÓÃ£©
+        Destroy(tempTexture); // é”€æ¯ä¸´æ—¶ Texture2D
         tempTexture = null;
 
-        // ½«Ö¡Êı¾İÌí¼Óµ½¶ÓÁĞ£¨Ïß³Ì°²È«£©
+        // å°†å¸§æ•°æ®åŠ å…¥é˜Ÿåˆ—ï¼ˆçº¿ç¨‹å®‰å…¨ï¼‰
         if (frameData != null && frameData.Length > 0)
         {
             lock (queueLock)
             {
-                // ÏŞÖÆ¶ÓÁĞ´óĞ¡£¬·ÀÖ¹ÄÚ´æÒç³ö
+                // é™åˆ¶é˜Ÿåˆ—å¤§å°ï¼Œé˜²æ­¢å†…å­˜æº¢å‡º
                 while (frameQueue.Count > 3)
                 {
                     frameQueue.Dequeue();
@@ -302,11 +446,11 @@ public class Test : MonoBehaviour
         }
         try
         {
-           
+
         }
         catch (Exception e)
         {
-            Debug.LogError("²¶»ñÖ¡Ê±³ö´í: " + e.Message);
+            Debug.LogError("Capture frame failed: " + e.Message);
         }
     }
 
@@ -314,11 +458,11 @@ public class Test : MonoBehaviour
     {
         try
         {
-            // ´´½¨TCP¿Í»§¶Ë²¢Á¬½Óµ½·şÎñÆ÷
+            // é’æ¶˜ç¼“TCPç€¹ãˆ¡åŸ›ç»”îˆšè‹Ÿæ©ç‚´å¸´é’ç‰ˆæ¹‡é”â€³æ«’
             client = new TcpClient();
             IAsyncResult result = client.BeginConnect(serverIP, serverPort, null, null);
 
-            // ÉèÖÃÁ¬½Ó³¬Ê±Ê±¼ä£¨5Ãë£©
+            // è®¾ç½®è¿æ¥è¶…æ—¶æ—¶é—´ï¼ˆ5 ç§’ï¼‰
             bool success = result.AsyncWaitHandle.WaitOne(TimeSpan.FromSeconds(5));
 
             if (client.Connected)
@@ -327,12 +471,12 @@ public class Test : MonoBehaviour
                 stream = client.GetStream();
                 isRunning = true;
 
-                // Æô¶¯·¢ËÍÏß³Ì
+                // å¯åŠ¨å‘é€çº¿ç¨‹
                 sendThread = new Thread(SendFrames);
-                sendThread.IsBackground = true; // ÉèÖÃÎªºóÌ¨Ïß³Ì
+                sendThread.IsBackground = true; // è®¾ç½®ä¸ºåå°çº¿ç¨‹
                 sendThread.Start();
 
-                // ĞÂÔö£ºÆô¶¯½ÓÊÕÏß³Ì
+                // å¯åŠ¨æ¥æ”¶çº¿ç¨‹
                 isReceiving = true;
                 receiveThread = new Thread(ReceiveGestureData);
                 receiveThread.IsBackground = true;
@@ -357,14 +501,14 @@ public class Test : MonoBehaviour
             {
                 try
                 {
-                    // ¼ì²é¿Í»§¶ËÁ¬½Ó×´Ì¬
+                    // æ£€æŸ¥å®¢æˆ·ç«¯è¿æ¥çŠ¶æ€
                     if (client == null || !client.Connected)
                     {
-                        Debug.LogWarning("·şÎñÆ÷Á¬½ÓÒÑ¶Ï¿ª");
+                        Debug.LogWarning("Server connection lost.");
                         break;
                     }
 
-                    // ´Ó¶ÓÁĞÖĞ»ñÈ¡Ö¡Êı¾İ£¨Ïß³Ì°²È«£©
+                    // ä»é˜Ÿåˆ—ä¸­è·å–å¸§æ•°æ®ï¼ˆçº¿ç¨‹å®‰å…¨ï¼‰
                     byte[] frameData = null;
                     lock (queueLock)
                     {
@@ -374,10 +518,10 @@ public class Test : MonoBehaviour
                         }
                     }
 
-                    // ·¢ËÍÖ¡Êı¾İ
+                    // é™æˆ¦â‚¬ä½¸æŠšéç‰ˆåµ
                     if (frameData != null && frameData.Length > 0)
                     {
-                        // ·¢ËÍÖ¡Êı¾İ³¤¶È (4×Ö½ÚÕûÊı)
+                        // é™æˆ¦â‚¬ä½¸æŠšéç‰ˆåµé—€å®å®³ (4ç€›æ¥„å¦­éå­˜æšŸ)
                         byte[] lengthBytes = BitConverter.GetBytes(frameData.Length);
 
                         if (stream != null && client.Connected)
@@ -388,7 +532,7 @@ public class Test : MonoBehaviour
                     }
                     else
                     {
-                        // Ã»ÓĞÖ¡Êı¾İÊ±£¬¶ÌÔİĞİÃß
+                        // æ²¡æœ‰å¸§æ•°æ®æ—¶çŸ­æš‚ä¼‘çœ 
                         Thread.Sleep(10);
                     }
                 }
@@ -396,7 +540,7 @@ public class Test : MonoBehaviour
                 {
                     if (!disconnecting)
                     {
-                        Debug.LogError("·¢ËÍÖ¡Ê±³ö´í: " + e.Message);
+                        Debug.LogError("Send frame failed: " + e.Message);
                     }
                     break;
                 }
@@ -406,13 +550,13 @@ public class Test : MonoBehaviour
         {
             if (!disconnecting)
             {
-                Debug.Log("·¢ËÍÏß³ÌÒÑÍË³ö");
+                Debug.Log("Send thread exited.");
                 Disconnect();
             }
         }
     }
 
-    // ĞÂÔö£º½ÓÊÕÊÖÊÆÊı¾İµÄÏß³Ìº¯Êı
+    // é‚æ¿î–ƒé”›æ°­å¸´é€èˆµå¢œé”æŒæšŸé¹î†¾æ®‘ç»¾è·¨â–¼é‘èŠ¥æšŸ
     void ReceiveGestureData()
     {
         try
@@ -421,11 +565,11 @@ public class Test : MonoBehaviour
             {
                 if (stream == null || !client.Connected)
                 {
-                    Debug.LogWarning("Á¬½ÓÒÑ¶Ï¿ª£¬ÎŞ·¨½ÓÊÕÊı¾İ");
+                    Debug.LogWarning("Connection lost, cannot receive data.");
                     break;
                 }
 
-                // ÏÈ½ÓÊÕÊı¾İ³¤¶È£¨4×Ö½Ú£©
+                // å…ˆæ¥æ”¶æ•°æ®é•¿åº¦ï¼ˆ4 å­—èŠ‚ï¼‰
                 byte[] lengthBytes = new byte[4];
                 int bytesRead = 0;
                 try
@@ -434,19 +578,19 @@ public class Test : MonoBehaviour
                 }
                 catch (Exception e)
                 {
-                    Debug.LogError("¶ÁÈ¡Êı¾İ³¤¶ÈÊ±³ö´í: " + e.Message);
+                    Debug.LogError("Read data length failed: " + e.Message);
                     break;
                 }
 
                 if (bytesRead != 4)
                 {
-                    Debug.LogWarning("½ÓÊÕÊı¾İ³¤¶ÈÊ§°Ü£¬¿ÉÄÜÁ¬½ÓÒÑ¶Ï¿ª");
+                    Debug.LogWarning("Failed to receive data length; connection may be closed.");
                     break;
                 }
 
                 int dataLength = BitConverter.ToInt32(lengthBytes, 0);
 
-                // ½ÓÊÕÊµ¼ÊÊı¾İ
+                // éºãƒ¦æ•¹ç€¹ç‚ºæª¯éç‰ˆåµ
                 byte[] dataBytes = new byte[dataLength];
                 int totalRead = 0;
                 while (totalRead < dataLength)
@@ -456,37 +600,37 @@ public class Test : MonoBehaviour
                         int read = stream.Read(dataBytes, totalRead, dataLength - totalRead);
                         if (read == 0)
                         {
-                            Debug.LogWarning("½ÓÊÕÊı¾İÊ§°Ü£¬Á¬½Ó¿ÉÄÜÒÑ¶Ï¿ª");
+                            Debug.LogWarning("Receive data failed; connection may be closed.");
                             break;
                         }
                         totalRead += read;
                     }
                     catch (Exception e)
                     {
-                        Debug.LogError("¶ÁÈ¡Êı¾İÄÚÈİÊ±³ö´í: " + e.Message);
+                        Debug.LogError("Read payload failed: " + e.Message);
                         break;
                     }
                 }
 
                 if (totalRead == dataLength)
                 {
-                    // ×ª»»Îª×Ö·û´®
+                    // æî„å´²æ¶“å“„ç“§ç»—ï¸¿è¦†
                     string jsonData = Encoding.UTF8.GetString(dataBytes);
 
-                    // ÔÚÖ÷Ïß³ÌÖĞ´òÓ¡
+                    // åœ¨ä¸»çº¿ç¨‹ä¸­å¤„ç† JSON
                     UnityMainThreadDispatcher.Instance.Enqueue(() =>
                     {
-                        // ·´ĞòÁĞ»¯ JSON Êı¾İ
+                        // é™å¶…ç°­é’æ¥€å¯² JSON éç‰ˆåµ
                         GestureData gestureData = JsonUtility.FromJson<GestureData>(jsonData);
 
-                        // ´¦ÀíÊÖÊÆÊı¾İ
+                        // æ¾¶å‹­æ‚Šéµå¬ªå¨éç‰ˆåµ
                         ProcessGestureData(gestureData);
                     });
                 }
                 else
                 {
-                    // Êı¾İ½ÓÊÕ²»ÍêÕû
-                    Debug.LogWarning($"Êı¾İ½ÓÊÕ²»ÍêÕû£¬ÆÚÍû {dataLength} ×Ö½Ú£¬Êµ¼Ê½ÓÊÕ {totalRead} ×Ö½Ú");
+                    // æ•°æ®æ¥æ”¶ä¸å®Œæ•´
+                    Debug.LogWarning($"Incomplete payload: expected {dataLength} bytes, received {totalRead} bytes");
                 }
             }
         }
@@ -494,7 +638,7 @@ public class Test : MonoBehaviour
         {
             if (!disconnecting)
             {
-                Debug.LogError("½ÓÊÕÊÖÊÆÊı¾İ³ö´í: " + e.Message);
+                Debug.LogError("Receive gesture data failed: " + e.Message);
             }
         }
     }
@@ -511,24 +655,24 @@ public class Test : MonoBehaviour
 
     void Disconnect()
     {
-        // ·ÀÖ¹ÖØ¸´µ÷ÓÃ
+        // é—ƒå‰î„›é–²å¶…î˜²ç’‹å†ªæ•¤
         if (disconnecting) return;
 
         disconnecting = true;
         isRunning = false;
-        isReceiving = false; // ĞÂÔö£ºÍ£Ö¹½ÓÊÕÏß³Ì
+        isReceiving = false; // åœæ­¢æ¥æ”¶çº¿ç¨‹
 
         try
         {
-            Debug.Log("¿ªÊ¼¶Ï¿ªÁ¬½Ó...");
+            Debug.Log("Disconnecting...");
 
-            // Çå¿ÕÖ¡¶ÓÁĞ
+            // æ¸…ç©ºå¸§é˜Ÿåˆ—
             lock (queueLock)
             {
                 frameQueue.Clear();
             }
 
-            // ¹Ø±ÕÍøÂçÁ÷ºÍ¿Í»§¶Ë£¨×ÓÏß³Ì²Ù×÷£©
+            // éæŠ½æ£´ç¼ƒæˆ ç²¶å¨´ä½¸æ‹°ç€¹ãˆ¡åŸ›ç»”îˆ¤ç´™ç€›æ„®åšç»‹å¬«æ·æµ£æ»ç´š
             if (stream != null)
             {
                 try { stream.Close(); } catch { }
@@ -541,71 +685,77 @@ public class Test : MonoBehaviour
                 client = null;
             }
 
-            // ÔÚÖ÷Ïß³ÌÖĞÍ£Ö¹ÉãÏñÍ·
+            // é¦ã„¤å¯Œç»¾è·¨â–¼æ¶“î…ä» å§ãˆ¡æ†šéå¿“ã”
             if (webcamTexture != null)
             {
                 webcamTexture.Stop();
                 webcamTexture = null;
             }
 
-            // ÊÍ·ÅTexture2D×ÊÔ´
+            // é–²å©ƒæ–Texture2Dç’§å‹¬ç°®
             if (texture != null)
             {
                 Destroy(texture);
                 texture = null;
             }
 
-            // µÈ´ı·¢ËÍÏß³ÌÍË³ö£¨ÉèÖÃ³¬Ê±£©
+            if (offlinePlaybackCoroutine != null)
+            {
+                StopCoroutine(offlinePlaybackCoroutine);
+                offlinePlaybackCoroutine = null;
+            }
+
+            // ç­‰å¾…å‘é€çº¿ç¨‹é€€å‡ºï¼ˆå¸¦è¶…æ—¶ï¼‰
             if (sendThread != null && sendThread.IsAlive)
             {
-                Debug.Log("µÈ´ı·¢ËÍÏß³ÌÍË³ö...");
+                Debug.Log("Waiting for send thread to exit...");
                 if (!sendThread.Join(2000))
                 {
-                    Debug.LogWarning("·¢ËÍÏß³ÌÎ´ÔÚ2ÃëÄÚÍË³ö£¬½«±»Ç¿ÖÆÖÕÖ¹");
+                    Debug.LogWarning("Send thread did not exit within 2 seconds; aborting.");
                     try { sendThread.Abort(); } catch { }
                 }
                 sendThread = null;
             }
 
-            // ĞÂÔö£ºµÈ´ı½ÓÊÕÏß³ÌÍË³ö
+            // ç­‰å¾…æ¥æ”¶çº¿ç¨‹é€€å‡ºï¼ˆå¸¦è¶…æ—¶ï¼‰
             if (receiveThread != null && receiveThread.IsAlive)
             {
-                Debug.Log("µÈ´ı½ÓÊÕÏß³ÌÍË³ö...");
+                Debug.Log("Waiting for receive thread to exit...");
                 if (!receiveThread.Join(2000))
                 {
-                    Debug.LogWarning("½ÓÊÕÏß³ÌÎ´ÔÚ2ÃëÄÚÍË³ö£¬½«±»Ç¿ÖÆÖÕÖ¹");
+                    Debug.LogWarning("Receive thread did not exit within 2 seconds; aborting.");
                     try { receiveThread.Abort(); } catch { }
                 }
                 receiveThread = null;
             }
 
-            Debug.Log("¶Ï¿ªÁ¬½ÓÍê³É");
+            Debug.Log("Disconnected.");
         }
         catch (Exception e)
         {
-            Debug.LogError("¶Ï¿ªÁ¬½ÓÊ±³ö´í: " + e.Message);
+            Debug.LogError("Disconnect failed: " + e.Message);
         }
     }
 
     /// <summary>
-    /// »¬¶¯´°¿Ú¶àÊı±í¾ö£¬¹ıÂËÀëÉ¢ÊÖÊÆ½á¹û
+    /// æ»‘åŠ¨çª—å£å¤šæ•°è¡¨å†³ï¼Œè¿‡æ»¤ç¦»æ•£æ‰‹åŠ¿ç»“æœ
     /// </summary>
-    /// <param name="history">ÊÖÊÆÀúÊ·¶ÓÁĞ</param>
-    /// <param name="newGesture">ĞÂÊ¶±ğµÄÊÖÊÆ</param>
-    /// <param name="windowSize">´°¿Ú´óĞ¡</param>
-    /// <returns>¹ıÂËºóµÄÊÖÊÆ½á¹û</returns>
+    /// <param name="history">éµå¬ªå¨é˜å——å½¶é—ƒç†·åª</param>
+    /// <param name="newGesture">é‚æ‹Œç˜‘é’î‚¤æ®‘éµå¬ªå¨</param>
+    /// <param name="windowSize">ç»æ¥€å½›æ¾¶Ñƒçš¬</param>
+    /// <returns>æ©å›¨æŠ¤éšåº£æ®‘éµå¬ªå¨ç¼æ’´ç‰</returns>
     private string FilterGesture(Queue<string> history, string newGesture, int windowSize)
     {
-        // 1. ½«ĞÂ½á¹û¼ÓÈëÀúÊ·¶ÓÁĞ
+        // 1. çå—˜æŸŠç¼æ’´ç‰é”çŠ²å†é˜å——å½¶é—ƒç†·åª
         history.Enqueue(newGesture);
 
-        // 2. ±£Ö¤¶ÓÁĞ³¤¶È²»³¬¹ı´°¿Ú´óĞ¡£¨ÒÆ³ı×î¾ÉµÄ½á¹û£©
+        // 2. ä¿è¯é˜Ÿåˆ—é•¿åº¦ä¸è¶…è¿‡çª—å£å¤§å°
         while (history.Count > windowSize)
         {
             history.Dequeue();
         }
 
-        // 3. Í³¼Æ¶ÓÁĞÖĞÃ¿¸öÊÖÊÆµÄ³öÏÖ´ÎÊı
+        // 3. ç¼ç†»î…¸é—ƒç†·åªæ¶“î…Ÿç˜¡æ¶“î…å¢œé”è·¨æ®‘é‘è™¹å¹‡å¨†â„ƒæšŸ
         Dictionary<string, int> gestureCount = new Dictionary<string, int>();
         foreach (string gesture in history)
         {
@@ -615,21 +765,21 @@ public class Test : MonoBehaviour
                 gestureCount[gesture] = 1;
         }
 
-        // 4. ÕÒµ½³öÏÖ´ÎÊı×î¶àµÄÊÖÊÆ£¨¶àÊı±í¾ö£©
+        // 4. éµæƒ§åŸŒé‘è™¹å¹‡å¨†â„ƒæšŸéˆâ‚¬æ¾¶æ°±æ®‘éµå¬ªå¨é”›å î˜¿éæ‹Œã€ƒéç­¹ç´š
         int maxCount = 0;
-        string majorityGesture = newGesture; // Ä¬ÈÏÓÃĞÂ½á¹û
+        string majorityGesture = newGesture; // æ¦›æ¨¿î…»é¢ã„¦æŸŠç¼æ’´ç‰
         foreach (var pair in gestureCount)
         {
-            // ÓÅÏÈÑ¡Ôñ´ÎÊı¸ü¶àµÄ
+            // ä¼˜å…ˆé€‰æ‹©å‡ºç°æ¬¡æ•°æ›´å¤šçš„æ‰‹åŠ¿
             if (pair.Value > maxCount)
             {
                 maxCount = pair.Value;
                 majorityGesture = pair.Key;
             }
-            // Èô´ÎÊıÏàÍ¬£¬ÓÅÏÈ±£Áô×î½ü³öÏÖµÄ£¨È¡¶ÓÁĞÖĞ×îºóÒ»´Î³öÏÖµÄ£©
+            // è‹¥æ¬¡æ•°ç›¸åŒï¼Œä¼˜å…ˆä¿ç•™æœ€è¿‘å‡ºç°çš„ç»“æœ
             else if (pair.Value == maxCount)
             {
-                foreach (string g in history.Reverse()) // ´ÓºóÍùÇ°ÕÒ
+                foreach (string g in history.Reverse()) // æµ åº¡æ‚—å¯°â‚¬é“å¶†å£˜
                 {
                     if (gestureCount[g] == maxCount)
                     {
@@ -646,21 +796,28 @@ public class Test : MonoBehaviour
 
     void ProcessGestureData(GestureData gestureData)
     {
+        if (gestureData == null || gestureData.hands == null)
+        {
+            left_hand.SetActive(false);
+            right_hand.SetActive(false);
+            return;
+        }
+
         bool is_left_detected = false;
         bool is_right_detected = false;
-        // ±éÀúÃ¿Ö»ÊÖ
+        // éå†æ¯åªæ‰‹
         foreach (HandData hand in gestureData.hands)
         {
             if (hand.hand_type == "Left")
             {
                 is_left_detected = true;
 
-                // ÊÖÊÆ»¬¶¯´°¿Ú¹ıÂË
+                // éµå¬ªå¨å©Šæˆå§©ç»æ¥€å½›æ©å›¨æŠ¤
                 filteredLeftGesture = FilterGesture(leftGestureHistory, hand.hand_gesture, gestureWindowSize);
                 Debug.Log("Left filtered: " + filteredLeftGesture);
                 left_result.text = filteredLeftGesture;
 
-                // ¿¨¶ûÂüÂË²¨
+                // æ‰‹åŠ¿æ»‘åŠ¨çª—å£è¿‡æ»¤
                 landmarkFilter.FilterLeftHandLandmarks(hand.landmarks);
 
                 foreach (HandLandmarkData landmark in hand.landmarks)
@@ -700,14 +857,14 @@ public class Test : MonoBehaviour
                             Vector3 direction = left_spheres[index + 1].transform.position - left_spheres[index].transform.position;
                             left_points[index].transform.forward = direction.normalized;
 
-                            // ±£³Öµ±Ç°µÄĞı×ª£¬Ö»ĞŞ¸ÄZÖá
+                            // ä¿æŒå½“å‰æ—‹è½¬ï¼Œåªä¿®æ”¹ Z è½´
                             Quaternion currentRotation = left_points[index].transform.localRotation;
 
-                            // ÌáÈ¡µ±Ç°µÄXºÍYĞı×ª£¬¹Ì¶¨ZÖá
+                            // æå–å½“å‰çš„ X/Y æ—‹è½¬ï¼Œå›ºå®š Z è½´
                             Vector3 euler = currentRotation.eulerAngles;
                             euler.z = origin_leftRotations[index].z;
 
-                            // Ó¦ÓÃĞÂµÄĞı×ª
+                            // æ´æ—‚æ•¤é‚æ‰®æ®‘éƒå¬­æµ†
                             left_points[index].transform.localRotation = Quaternion.Euler(euler);
                         }
                     }
@@ -717,12 +874,12 @@ public class Test : MonoBehaviour
             {
                 is_right_detected = true;
 
-                // 2. ÊÖÊÆ»¬¶¯´°¿Ú¹ıÂË
+                // 2. éµå¬ªå¨å©Šæˆå§©ç»æ¥€å½›æ©å›¨æŠ¤
                 filteredRightGesture = FilterGesture(rightGestureHistory, hand.hand_gesture, gestureWindowSize);
                 Debug.Log("Right filtered: " + filteredRightGesture);
                 right_result.text = filteredRightGesture;
 
-                // ¿¨¶ûÂüÂË²¨
+                // æ‰‹åŠ¿æ»‘åŠ¨çª—å£è¿‡æ»¤
                 landmarkFilter.FilterRightHandLandmarks(hand.landmarks);
 
                 foreach (HandLandmarkData landmark in hand.landmarks)
@@ -763,14 +920,14 @@ public class Test : MonoBehaviour
                             Vector3 direction = right_spheres[index + 1].transform.position - right_spheres[index].transform.position;
                             right_points[index].transform.forward = direction.normalized;
 
-                            // ±£³Öµ±Ç°µÄĞı×ª£¬Ö»ĞŞ¸ÄZÖá
+                            // ä¿æŒå½“å‰æ—‹è½¬ï¼Œåªä¿®æ”¹ Z è½´
                             Quaternion currentRotation = right_points[index].transform.localRotation;
 
-                            // ÌáÈ¡µ±Ç°µÄXºÍYĞı×ª£¬¹Ì¶¨ZÖá
+                            // æå–å½“å‰çš„ X/Y æ—‹è½¬ï¼Œå›ºå®š Z è½´
                             Vector3 euler = currentRotation.eulerAngles;
                             euler.z = origin_rightRotations[index].z;
 
-                            // Ó¦ÓÃĞÂµÄĞı×ª
+                            // æ´æ—‚æ•¤é‚æ‰®æ®‘éƒå¬­æµ†
                             right_points[index].transform.localRotation = Quaternion.Euler(euler);
                         }
                     }
@@ -780,7 +937,7 @@ public class Test : MonoBehaviour
         left_hand.SetActive(is_left_detected);
         right_hand.SetActive(is_right_detected);
 
-        // ÊÖÊÆ½»»¥
+        // éµå¬ªå¨æµœã‚„ç°°
         left_hold.hold = right_hold.hold = false;
         if (filteredLeftGesture.Equals("7") && is_left_detected)
         {
@@ -790,7 +947,7 @@ public class Test : MonoBehaviour
         {
             right_hold.hold = true;
         }
-        if(left_hold.hold && right_hold.hold)
+        if (left_hold.hold && right_hold.hold)
         {
             left_hold.hold = right_hold.hold = false;
 

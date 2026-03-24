@@ -37,3 +37,5 @@ node_modules/
 **/node_modules
 **/.env
 unity_asl/
+
+asl_first20_jsonl

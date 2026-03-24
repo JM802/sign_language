@@ -1,0 +1,443 @@
+from __future__ import annotations
+
+import argparse
+import json
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import cv2
+
+
+@dataclass
+class HandLandmarkData:
+    id: int
+    x: float
+    y: float
+    z: float
+
+
+def compute_bound_area(landmarks: List[HandLandmarkData]) -> float:
+    xs = [p.x for p in landmarks]
+    ys = [p.y for p in landmarks]
+    if not xs or not ys:
+        return 0.0
+    return float((max(xs) - min(xs)) * (max(ys) - min(ys)))
+
+
+def _clone_landmarks(landmarks: List[HandLandmarkData]) -> List[HandLandmarkData]:
+    return [HandLandmarkData(id=p.id, x=p.x, y=p.y, z=p.z) for p in landmarks]
+
+
+def _clone_hand_payload(hand: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "hand_index": int(hand["hand_index"]),
+        "hand_type": str(hand["hand_type"]),
+        "bound_area": float(hand["bound_area"]),
+        "hand_gesture": str(hand.get("hand_gesture", "unknown")),
+        "landmarks": _clone_landmarks(hand["landmarks"]),
+    }
+
+
+def _lerp(a: float, b: float, t: float) -> float:
+    return float(a + (b - a) * t)
+
+
+def _interpolate_hand_payload(prev_hand: Dict[str, Any], next_hand: Dict[str, Any], t: float) -> Dict[str, Any]:
+    prev_landmarks: List[HandLandmarkData] = prev_hand["landmarks"]
+    next_landmarks: List[HandLandmarkData] = next_hand["landmarks"]
+    landmarks: List[HandLandmarkData] = []
+
+    for prev_lm, next_lm in zip(prev_landmarks, next_landmarks):
+        landmarks.append(
+            HandLandmarkData(
+                id=prev_lm.id,
+                x=_lerp(prev_lm.x, next_lm.x, t),
+                y=_lerp(prev_lm.y, next_lm.y, t),
+                z=_lerp(prev_lm.z, next_lm.z, t),
+            )
+        )
+
+    return {
+        "hand_index": int(prev_hand["hand_index"]),
+        "hand_type": str(prev_hand["hand_type"]),
+        "bound_area": _lerp(float(prev_hand["bound_area"]), float(next_hand["bound_area"]), t),
+        "hand_gesture": str(prev_hand.get("hand_gesture", "unknown")),
+        "landmarks": landmarks,
+    }
+
+
+def _sort_and_reindex_hands(hands_payload: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    order = {"Left": 0, "Right": 1}
+    hands_sorted = sorted(hands_payload, key=lambda h: (order.get(h["hand_type"], 99), h["hand_index"]))
+    for idx, hand in enumerate(hands_sorted):
+        hand["hand_index"] = idx
+    return hands_sorted
+
+
+def _interpolate_missing_hands(frames: List[Dict[str, Any]], max_gap: int) -> List[Dict[str, Any]]:
+    if not frames:
+        return frames
+
+    for hand_type in ("Left", "Right"):
+        frame_to_hand: Dict[int, Dict[str, Any]] = {}
+        for frame_idx, packet in enumerate(frames):
+            for hand in packet["hands"]:
+                if hand["hand_type"] == hand_type:
+                    frame_to_hand[frame_idx] = _clone_hand_payload(hand)
+                    break
+
+        available = sorted(frame_to_hand.keys())
+        for start_idx, end_idx in zip(available, available[1:]):
+            gap = end_idx - start_idx - 1
+            if gap <= 0 or gap > max_gap:
+                continue
+
+            start_hand = frame_to_hand[start_idx]
+            end_hand = frame_to_hand[end_idx]
+            for missing_idx in range(start_idx + 1, end_idx):
+                if any(h["hand_type"] == hand_type for h in frames[missing_idx]["hands"]):
+                    continue
+                t = (missing_idx - start_idx) / float(end_idx - start_idx)
+                frames[missing_idx]["hands"].append(_interpolate_hand_payload(start_hand, end_hand, t))
+
+    for packet in frames:
+        packet["hands"] = _sort_and_reindex_hands(packet["hands"])
+        packet["hand_count"] = len(packet["hands"])
+
+    return frames
+
+
+def _smooth_landmarks_savgol(frames: List[Dict[str, Any]], window: int = 7, poly: int = 2) -> List[Dict[str, Any]]:
+    try:
+        from scipy.signal import savgol_filter
+    except ImportError as exc:
+        raise RuntimeError("scipy is required: pip install scipy") from exc
+
+    import numpy as np
+
+    total = len(frames)
+    win = min(window, total if total % 2 == 1 else total - 1)
+    if win < poly + 2:
+        return frames
+
+    for hand_type in ("Left", "Right"):
+        hand_frames: List[Optional[List[Any]]] = []
+        frame_indices: List[int] = []
+        for fi, packet in enumerate(frames):
+            found = None
+            for hand in packet["hands"]:
+                if hand["hand_type"] == hand_type:
+                    found = hand["landmarks"]
+                    break
+            hand_frames.append(found)
+            if found is not None:
+                frame_indices.append(fi)
+
+        if len(frame_indices) < win:
+            continue
+
+        first_landmarks = hand_frames[frame_indices[0]]
+        if first_landmarks is None:
+            continue
+
+        n_lm = len(first_landmarks)
+        for lm_id in range(n_lm):
+            for axis in ("x", "y", "z"):
+                vals = np.array(
+                    [
+                        hand_frames[fi][lm_id][axis]
+                        if hand_frames[fi] is not None and isinstance(hand_frames[fi][lm_id], dict)
+                        else getattr(hand_frames[fi][lm_id], axis)
+                        for fi in frame_indices
+                    ],
+                    dtype=float,
+                )
+                smoothed = savgol_filter(vals, window_length=win, polyorder=poly)
+
+                for i, fi in enumerate(frame_indices):
+                    landmarks = hand_frames[fi]
+                    if landmarks is None:
+                        continue
+                    lm = landmarks[lm_id]
+                    if isinstance(lm, dict):
+                        lm[axis] = float(smoothed[i])
+                    else:
+                        setattr(lm, axis, float(smoothed[i]))
+
+    return frames
+
+
+def extract_frames_from_video(
+    video_path: Path,
+    max_hands: int,
+    interpolate_missing: bool,
+    interpolate_max_gap: int,
+    swap_handedness: bool,
+) -> Dict[str, Any]:
+    try:
+        from mediapipe.python.solutions import hands as mp_hands
+    except ImportError as exc:
+        raise RuntimeError("mediapipe is required: pip install mediapipe") from exc
+
+    cap = cv2.VideoCapture(str(video_path))
+    if not cap.isOpened():
+        raise RuntimeError(f"Cannot open video: {video_path}")
+
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    if not fps or fps <= 0:
+        fps = 30.0
+
+    hands = mp_hands.Hands(
+        static_image_mode=False,
+        max_num_hands=max_hands,
+        model_complexity=1,
+        min_detection_confidence=0.5,
+        min_tracking_confidence=0.5,
+    )
+
+    frame_index = 0
+    frames: List[Dict[str, Any]] = []
+
+    while True:
+        ok, frame = cap.read()
+        if not ok:
+            break
+
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        result: Any = hands.process(rgb)
+
+        hands_payload: List[Dict[str, Any]] = []
+        if result.multi_hand_landmarks and result.multi_handedness:
+            for hand_index, (hand_landmarks, handedness) in enumerate(
+                zip(result.multi_hand_landmarks, result.multi_handedness)
+            ):
+                landmarks: List[HandLandmarkData] = []
+                for landmark_id, lm in enumerate(hand_landmarks.landmark):
+                    landmarks.append(
+                        HandLandmarkData(
+                            id=landmark_id,
+                            x=float(lm.x),
+                            y=float(lm.y),
+                            z=float(lm.z),
+                        )
+                    )
+
+                hand_type = handedness.classification[0].label
+                if swap_handedness:
+                    hand_type = "Right" if hand_type == "Left" else "Left" if hand_type == "Right" else hand_type
+
+                hands_payload.append(
+                    {
+                        "hand_index": hand_index,
+                        "hand_type": hand_type,
+                        "bound_area": compute_bound_area(landmarks),
+                        "hand_gesture": "unknown",
+                        "landmarks": landmarks,
+                    }
+                )
+
+        hands_payload = _sort_and_reindex_hands(hands_payload)
+        timestamp_ms = int(cap.get(cv2.CAP_PROP_POS_MSEC))
+        if timestamp_ms <= 0:
+            timestamp_ms = int(round(frame_index * 1000.0 / fps))
+
+        frames.append(
+            {
+                "frame_index": frame_index,
+                "timestamp_ms": timestamp_ms,
+                "frame_time_sec": frame_index / fps,
+                "hand_count": len(hands_payload),
+                "hands": hands_payload,
+            }
+        )
+        frame_index += 1
+
+    hands.close()
+    cap.release()
+
+    if interpolate_missing:
+        frames = _interpolate_missing_hands(frames, max_gap=interpolate_max_gap)
+
+    frames = _smooth_landmarks_savgol(frames, window=7, poly=2)
+
+    return {
+        "meta": {
+            "video_id": video_path.stem,
+            "video_path": str(video_path),
+            "fps": float(fps),
+            "total_frames": len(frames),
+            "duration_ms": frames[-1]["timestamp_ms"] if frames else 0,
+            "frame_interval_ms": float(1000.0 / fps),
+            "sync_source": "video_frame_time",
+        },
+        "frames": frames,
+    }
+
+
+def export_unity_json(video_path: Path, output_json: Path, max_hands: int, interpolate_missing: bool, interpolate_max_gap: int, swap_handedness: bool) -> None:
+    payload = extract_frames_from_video(
+        video_path=video_path,
+        max_hands=max_hands,
+        interpolate_missing=interpolate_missing,
+        interpolate_max_gap=interpolate_max_gap,
+        swap_handedness=swap_handedness,
+    )
+
+    serializable_frames = []
+    for frame in payload["frames"]:
+        serializable_frames.append(
+            {
+                "frame_index": frame["frame_index"],
+                "timestamp_ms": frame["timestamp_ms"],
+                "frame_time_sec": frame["frame_time_sec"],
+                "hand_count": frame["hand_count"],
+                "hands": [
+                    {
+                        "hand_index": hand["hand_index"],
+                        "hand_type": hand["hand_type"],
+                        "bound_area": hand["bound_area"],
+                        "hand_gesture": hand["hand_gesture"],
+                        "landmarks": [p.__dict__ for p in hand["landmarks"]],
+                    }
+                    for hand in frame["hands"]
+                ],
+            }
+        )
+
+    output_json.parent.mkdir(parents=True, exist_ok=True)
+    output_json.write_text(
+        json.dumps({"meta": payload["meta"], "frames": serializable_frames}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    print(f"[export-json] video={video_path.name}, frames={len(serializable_frames)}, out={output_json}")
+
+
+def export_unity_gesture_stream(video_path: Path, output_jsonl: Path, max_hands: int, interpolate_missing: bool, interpolate_max_gap: int, swap_handedness: bool) -> None:
+    payload = extract_frames_from_video(
+        video_path=video_path,
+        max_hands=max_hands,
+        interpolate_missing=interpolate_missing,
+        interpolate_max_gap=interpolate_max_gap,
+        swap_handedness=swap_handedness,
+    )
+
+    output_jsonl.parent.mkdir(parents=True, exist_ok=True)
+    with output_jsonl.open("w", encoding="utf-8") as f:
+        for frame in payload["frames"]:
+            packet = {
+                "frame_index": frame["frame_index"],
+                "timestamp_ms": frame["timestamp_ms"],
+                "hand_count": frame["hand_count"],
+                "hands": [
+                    {
+                        "hand_index": hand["hand_index"],
+                        "hand_type": hand["hand_type"],
+                        "bound_area": hand["bound_area"],
+                        "hand_gesture": hand["hand_gesture"],
+                        "landmarks": [p.__dict__ for p in hand["landmarks"]],
+                    }
+                    for hand in frame["hands"]
+                ],
+            }
+            f.write(json.dumps(packet, ensure_ascii=False) + "\n")
+
+    print(f"[export-gesture-stream] video={video_path.name}, frames={len(payload['frames'])}, out={output_jsonl}")
+
+
+def _iter_video_files(input_dir: Path) -> List[Path]:
+    return sorted(
+        [
+            path
+            for path in input_dir.iterdir()
+            if path.is_file() and path.suffix.lower() in {".mp4", ".mov", ".avi", ".mkv"}
+        ]
+    )
+
+
+def batch_export_unity_gesture_stream(
+    input_dir: Path,
+    output_dir: Path,
+    max_hands: int,
+    interpolate_missing: bool,
+    interpolate_max_gap: int,
+    swap_handedness: bool,
+) -> None:
+    if not input_dir.exists():
+        raise RuntimeError(f"Input directory not found: {input_dir}")
+
+    video_files = _iter_video_files(input_dir)
+    if not video_files:
+        raise RuntimeError(f"No video files found in: {input_dir}")
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    for video_path in video_files:
+        output_jsonl = output_dir / f"unity_gesture_stream_{video_path.stem}.jsonl"
+        export_unity_gesture_stream(
+            video_path=video_path,
+            output_jsonl=output_jsonl,
+            max_hands=max_hands,
+            interpolate_missing=interpolate_missing,
+            interpolate_max_gap=interpolate_max_gap,
+            swap_handedness=swap_handedness,
+        )
+
+    print(f"[batch-export-gesture-stream] videos={len(video_files)}, in={input_dir}, out={output_dir}")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Offline hand pipeline without MySQL.")
+    parser.add_argument(
+        "--mode",
+        choices=["export-gesture-stream", "batch-export-gesture-stream"],
+        default="batch-export-gesture-stream",
+    )
+    parser.add_argument("--video", help="Input video path for single-file export")
+    parser.add_argument(
+        "--input-dir",
+        default=r"F:\sign_language\data\asl\asl_first20",
+        help="Input folder for batch export",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default="new_sign_python/asl_first20_jsonl",
+        help="Output folder for batch export",
+    )
+    parser.add_argument("--max-hands", type=int, default=2)
+    parser.add_argument("--interpolate-missing", action="store_true", default=True)
+    parser.add_argument("--no-interpolate-missing", action="store_false", dest="interpolate_missing")
+    parser.add_argument("--interpolate-max-gap", type=int, default=6)
+    parser.add_argument("--swap-handedness", action="store_true", default=True)
+    parser.add_argument("--output-jsonl", default="new_sign_python/unity_gesture_stream.jsonl")
+    return parser
+
+
+def main() -> None:
+    args = build_parser().parse_args()
+    if args.mode == "batch-export-gesture-stream":
+        batch_export_unity_gesture_stream(
+            input_dir=Path(args.input_dir).resolve(),
+            output_dir=Path(args.output_dir).resolve(),
+            max_hands=args.max_hands,
+            interpolate_missing=args.interpolate_missing,
+            interpolate_max_gap=args.interpolate_max_gap,
+            swap_handedness=args.swap_handedness,
+        )
+        return
+
+    if not args.video:
+        raise RuntimeError("--video is required in export-gesture-stream mode")
+
+    export_unity_gesture_stream(
+        video_path=Path(args.video).resolve(),
+        output_jsonl=Path(args.output_jsonl).resolve(),
+        max_hands=args.max_hands,
+        interpolate_missing=args.interpolate_missing,
+        interpolate_max_gap=args.interpolate_max_gap,
+        swap_handedness=args.swap_handedness,
+    )
+
+
+if __name__ == "__main__":
+    main()

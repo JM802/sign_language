@@ -1,13 +1,4 @@
-﻿#!/usr/bin/env python3
-"""
-Offline backend pipeline:
-- Extract per-frame hand landmarks
-- Persist sync timestamps and render metadata into MySQL
-- Optionally export Unity-friendly JSON from DB
-
-All code is in new_sign_python.
-"""
-
+﻿
 from __future__ import annotations
 
 import argparse
@@ -133,6 +124,199 @@ def compute_bound_area(landmarks: List[HandLandmarkData]) -> float:
     if not xs or not ys:
         return 0.0
     return float((max(xs) - min(xs)) * (max(ys) - min(ys)))
+
+
+def _clone_landmarks(landmarks: List[HandLandmarkData]) -> List[HandLandmarkData]:
+    return [HandLandmarkData(id=p.id, x=p.x, y=p.y, z=p.z) for p in landmarks]
+
+
+def _clone_hand_payload(hand: Dict) -> Dict:
+    return {
+        "hand_index": int(hand["hand_index"]),
+        "hand_type": str(hand["hand_type"]),
+        "bound_area": float(hand["bound_area"]),
+        "hand_gesture": str(hand.get("hand_gesture", "unknown")),
+        "landmarks": _clone_landmarks(hand["landmarks"]),
+    }
+
+
+def _lerp(a: float, b: float, t: float) -> float:
+    return float(a + (b - a) * t)
+
+
+def _interpolate_hand_payload(prev_hand: Dict, next_hand: Dict, t: float) -> Dict:
+    prev_landmarks: List[HandLandmarkData] = prev_hand["landmarks"]
+    next_landmarks: List[HandLandmarkData] = next_hand["landmarks"]
+    landmarks: List[HandLandmarkData] = []
+
+    for prev_lm, next_lm in zip(prev_landmarks, next_landmarks):
+        landmarks.append(
+            HandLandmarkData(
+                id=prev_lm.id,
+                x=_lerp(prev_lm.x, next_lm.x, t),
+                y=_lerp(prev_lm.y, next_lm.y, t),
+                z=_lerp(prev_lm.z, next_lm.z, t),
+            )
+        )
+
+    return {
+        "hand_index": int(prev_hand["hand_index"]),
+        "hand_type": str(prev_hand["hand_type"]),
+        "bound_area": _lerp(float(prev_hand["bound_area"]), float(next_hand["bound_area"]), t),
+        "hand_gesture": str(prev_hand.get("hand_gesture", "unknown")),
+        "landmarks": landmarks,
+    }
+
+
+def _sort_and_reindex_hands(hands_payload: List[Dict]) -> List[Dict]:
+    order = {"Left": 0, "Right": 1}
+    hands_sorted = sorted(hands_payload, key=lambda h: (order.get(h["hand_type"], 99), h["hand_index"]))
+    for idx, hand in enumerate(hands_sorted):
+        hand["hand_index"] = idx
+    return hands_sorted
+
+
+def _interpolate_missing_hands(frames: List[Dict], max_gap: int) -> List[Dict]:
+    if not frames:
+        return frames
+
+    hand_types = ("Left", "Right")
+    total_frames = len(frames)
+
+    for hand_type in hand_types:
+        frame_to_hand: Dict[int, Dict] = {}
+        for frame_idx, packet in enumerate(frames):
+            for hand in packet["hands"]:
+                if hand["hand_type"] == hand_type:
+                    frame_to_hand[frame_idx] = _clone_hand_payload(hand)
+                    break
+
+        available = sorted(frame_to_hand.keys())
+        for start_idx, end_idx in zip(available, available[1:]):
+            gap = end_idx - start_idx - 1
+            if gap <= 0 or gap > max_gap:
+                continue
+
+            start_hand = frame_to_hand[start_idx]
+            end_hand = frame_to_hand[end_idx]
+            for missing_idx in range(start_idx + 1, end_idx):
+                if any(h["hand_type"] == hand_type for h in frames[missing_idx]["hands"]):
+                    continue
+                t = (missing_idx - start_idx) / float(end_idx - start_idx)
+                frames[missing_idx]["hands"].append(_interpolate_hand_payload(start_hand, end_hand, t))
+
+    for packet in frames:
+        packet["hands"] = _sort_and_reindex_hands(packet["hands"])
+        packet["hand_count"] = len(packet["hands"])
+
+    return frames
+
+
+def extract_direct_to_unity_gesture_stream(
+    video_path: Path,
+    output_jsonl: Path,
+    max_hands: int,
+    interpolate_missing: bool,
+    interpolate_max_gap: int,
+    swap_handedness: bool,
+) -> None:
+    try:
+        import mediapipe as mp
+    except ImportError as exc:
+        raise RuntimeError("mediapipe is required for direct-export mode: pip install mediapipe") from exc
+
+    cap = cv2.VideoCapture(str(video_path))
+    if not cap.isOpened():
+        raise RuntimeError(f"Cannot open video: {video_path}")
+
+    hands = mp.solutions.hands.Hands(
+        static_image_mode=False,
+        max_num_hands=max_hands,
+        model_complexity=1,
+        min_detection_confidence=0.5,
+        min_tracking_confidence=0.5,
+    )
+
+    output_jsonl.parent.mkdir(parents=True, exist_ok=True)
+
+    frame_index = 0
+    frames: List[Dict] = []
+    while True:
+        ok, frame = cap.read()
+        if not ok:
+            break
+
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        result = hands.process(rgb)
+
+        hands_payload: List[Dict] = []
+        if result.multi_hand_landmarks and result.multi_handedness:
+            for hand_index, (hand_landmarks, handedness) in enumerate(
+                zip(result.multi_hand_landmarks, result.multi_handedness)
+            ):
+                landmarks: List[HandLandmarkData] = []
+                for landmark_id, lm in enumerate(hand_landmarks.landmark):
+                    # Keep MediaPipe's raw normalized coordinates so they match the
+                    # existing Unity playback math in Test.cs.
+                    landmarks.append(
+                        HandLandmarkData(
+                            id=landmark_id,
+                            x=float(lm.x),
+                            y=float(lm.y),
+                            z=float(lm.z),
+                        )
+                    )
+
+                hand_type = handedness.classification[0].label
+                if swap_handedness:
+                    hand_type = "Right" if hand_type == "Left" else "Left" if hand_type == "Right" else hand_type
+
+                bound_area = compute_bound_area(landmarks)
+                hands_payload.append(
+                    {
+                        "hand_index": hand_index,
+                        "hand_type": hand_type,
+                        "bound_area": bound_area,
+                        "hand_gesture": "unknown",
+                        "landmarks": landmarks,
+                    }
+                )
+
+        hands_payload = _sort_and_reindex_hands(hands_payload)
+        frames.append(
+            {
+                "hand_count": len(hands_payload),
+                "hands": hands_payload,
+            }
+        )
+        frame_index += 1
+
+    if interpolate_missing:
+        frames = _interpolate_missing_hands(frames, max_gap=interpolate_max_gap)
+
+    with output_jsonl.open("w", encoding="utf-8") as f:
+        for packet in frames:
+            serializable_packet = {
+                "hand_count": packet["hand_count"],
+                "hands": [
+                    {
+                        "hand_index": hand["hand_index"],
+                        "hand_type": hand["hand_type"],
+                        "bound_area": hand["bound_area"],
+                        "hand_gesture": hand["hand_gesture"],
+                        "landmarks": [p.__dict__ for p in hand["landmarks"]],
+                    }
+                    for hand in packet["hands"]
+                ],
+            }
+            f.write(json.dumps(serializable_packet, ensure_ascii=False) + "\n")
+
+    hands.close()
+    cap.release()
+    print(
+        f"[direct-export-gesture-stream] video={video_path.name}, frames={frame_index}, "
+        f"interpolate_missing={interpolate_missing}, max_gap={interpolate_max_gap}, out={output_jsonl}"
+    )
 
 
 def upsert_video_meta(
@@ -500,7 +684,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Backend-only hand timestamp tagging pipeline (MySQL)."
     )
-    parser.add_argument("--mode", choices=["extract", "export-json", "export-gesture-stream"], default="extract")
+    parser.add_argument(
+        "--mode",
+        choices=["extract", "export-json", "export-gesture-stream", "direct-export-gesture-stream"],
+        default="extract",
+    )
     parser.add_argument("--video", help="Input video path for extract mode")
     parser.add_argument("--video-id", default=None, help="Video id; default uses input video stem")
     parser.add_argument("--max-hands", type=int, default=2)
@@ -521,6 +709,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser.add_argument("--left-hand-model", default=None)
     parser.add_argument("--right-hand-model", default=None)
+    parser.add_argument("--interpolate-missing", action="store_true", default=True)
+    parser.add_argument("--no-interpolate-missing", action="store_false", dest="interpolate_missing")
+    parser.add_argument("--interpolate-max-gap", type=int, default=6)
+    parser.add_argument("--swap-handedness", action="store_true",default=True)
 
     parser.add_argument("--output-json", default="new_sign_python/unity_playback_data.json")
     parser.add_argument("--output-jsonl", default="new_sign_python/unity_gesture_stream.jsonl")
@@ -573,6 +765,21 @@ def main() -> None:
             raise RuntimeError("--video-id is required in export-gesture-stream mode")
         output_jsonl = Path(args.output_jsonl).resolve()
         export_unity_gesture_stream(mysql_cfg=mysql_cfg, video_id=args.video_id, output_jsonl=output_jsonl)
+        return
+
+    if args.mode == "direct-export-gesture-stream":
+        if not args.video:
+            raise RuntimeError("--video is required in direct-export-gesture-stream mode")
+        video_path = Path(args.video).resolve()
+        output_jsonl = Path(args.output_jsonl).resolve()
+        extract_direct_to_unity_gesture_stream(
+            video_path=video_path,
+            output_jsonl=output_jsonl,
+            max_hands=args.max_hands,
+            interpolate_missing=args.interpolate_missing,
+            interpolate_max_gap=args.interpolate_max_gap,
+            swap_handedness=args.swap_handedness,
+        )
         return
 
 
