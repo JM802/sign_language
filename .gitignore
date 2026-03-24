@@ -44,6 +44,7 @@ asl_300/
 node_modules/
 **/node_cache/
 **/_cacache/
+ALS_300_VIDEO/
 
 frontend/F:/nodejs/node_cache/_update-notifier-last-checked
 /home/jm802/sign_language/frontend/F:\nodejs\node_cache
