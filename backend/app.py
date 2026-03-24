@@ -5,14 +5,10 @@ import tempfile
 import numpy as np
 import pymysql
 from flask import Flask, request, jsonify, send_from_directory
-from flask_cors import CORS
-from dotenv import load_dotenv 
+from flask_cors import CORS 
 import config
 from inference_camera import SignLanguageInferencePipeline
 
-env_path=config.ENV_PATH
-
-load_dotenv(env_path)
 
 app = Flask(__name__)
 CORS(app, resources={
@@ -25,113 +21,6 @@ CORS(app, resources={
 
 # 配置
 GLB_ROOT = config.GLB_ROOT
-
-DB_HOST = os.getenv("DB_HOST")
-DB_PORT = int(os.getenv("DB_PORT"))
-DB_USER = os.getenv("DB_USER")
-DB_PASSWORD = os.getenv("DB_PASSWORD")
-DB_NAME = os.getenv("DB_NAME")
-
-# 供后续请求使用的连接池配置
-DB_CONFIG = {
-    'host': DB_HOST,
-    'port': DB_PORT,
-    'user': DB_USER,
-    'password': DB_PASSWORD,
-    'db': DB_NAME,
-    'charset': 'utf8mb4'
-}
-
-
-# 数据库自动化初始化
-def init_db():
-    """在应用启动前，检查并自动创建数据库和表"""
-    try:
-        # 此时不指定 db，以便创建尚未存在的数据库
-        conn = pymysql.connect(
-            host=DB_HOST,
-            port=DB_PORT,
-            user=DB_USER,
-            password=DB_PASSWORD,
-            charset='utf8mb4'
-        )
-        with conn.cursor() as cursor:
-            # 创建数据库
-            cursor.execute(f"CREATE DATABASE IF NOT EXISTS `{DB_NAME}` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;")
-            cursor.execute(f"USE `{DB_NAME}`;")
-            
-            # 创建映射表
-            create_table_sql = """
-            CREATE TABLE IF NOT EXISTS `sign_assets` (
-              `id` INT(11) UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-              `word_name` VARCHAR(100) NOT NULL COMMENT '手语词条名称',
-              `folder_name` VARCHAR(255) NOT NULL COMMENT '服务器上真实的文件夹全名',
-              `total_frames` INT(11) DEFAULT 0 COMMENT '动作对应的模型总帧数',
-              `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-              `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-              PRIMARY KEY (`id`),
-              UNIQUE KEY `uk_word_name` (`word_name`)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-            """
-            cursor.execute(create_table_sql)
-        conn.commit()
-        conn.close()
-        print("✅ 数据库与表结构自动初始化完成！")
-    except Exception as e:
-        print(f"❌ 数据库初始化失败: {e}")
-        sys.exit(1) # 如果数据库连不上，直接终止启动
-
-def sync_glb_to_db():
-    """在应用启动时，扫描 GLB_ROOT 目录并将映射关系同步到数据库"""
-    if not os.path.exists(GLB_ROOT):
-        print(f"⚠️ GLB 根目录不存在: {GLB_ROOT}，请检查配置，跳过同步。")
-        return
-
-    print(f"🔍 开始扫描 GLB 模型目录: {GLB_ROOT} ...")
-    try:
-        conn = pymysql.connect(**DB_CONFIG)
-        with conn.cursor() as cursor:
-            # 扫描目录下所有文件夹
-            folders = [f for f in os.listdir(GLB_ROOT) if os.path.isdir(os.path.join(GLB_ROOT, f))]
-            sync_count = 0
-
-            for folder in folders:
-                try:
-                    # 提取词条名称：ACCIDENT_xxx-ACCIDENT)
-                    word_name = folder.split('-')[-1].upper()
-                    if not word_name:
-                        continue
-
-                    # 统计该文件夹下的总帧数 (.glb 文件数量)
-                    folder_path = os.path.join(GLB_ROOT, folder)
-                    total_frames = len([f for f in os.listdir(folder_path) if f.endswith('.glb')])
-
-                    # 插入或更新数据库 (利用 uk_word_name 唯一索引)
-                    # 如果词条已存在，则更新文件夹路径和总帧数
-                    sql = """
-                        INSERT INTO `sign_assets` (`word_name`, `folder_name`, `total_frames`)
-                        VALUES (%s, %s, %s)
-                        ON DUPLICATE KEY UPDATE 
-                            `folder_name` = VALUES(`folder_name`),
-                            `total_frames` = VALUES(`total_frames`);
-                    """
-                    cursor.execute(sql, (word_name, folder, total_frames))
-                    sync_count += 1
-                except Exception as e:
-                    print(f"⚠️ 解析文件夹 {folder} 时出错，已跳过: {e}")
-
-            conn.commit()
-        conn.close()
-        print(f"✅ 成功同步 {sync_count} 个手语模型映射到数据库！")
-    except Exception as e:
-        print(f"❌ 同步模型到数据库失败: {e}")
-
-# 执行数据库初始化
-init_db()
-
-# 自动扫描磁盘并同步映射数据到 MySQL
-sync_glb_to_db()
-
 
 # 复用 inference_camera.py 的完整推理流水线
 # 包含：模型加载、归一化统计量、标签映射、平滑器

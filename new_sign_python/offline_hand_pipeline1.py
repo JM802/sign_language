@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import cv2
 
@@ -355,6 +356,82 @@ def _iter_video_files(input_dir: Path) -> List[Path]:
     )
 
 
+def _extract_word_key(video_path: Path) -> str:
+    stem = video_path.stem.strip()
+    for separator in ("-", "_", " "):
+        if separator in stem:
+            candidate = stem.split(separator)[-1].strip()
+            if candidate:
+                return candidate.upper()
+    return stem.upper()
+
+
+def _select_unique_word_videos(
+    video_files: List[Path],
+    sample_size: int,
+    required_words: Set[str],
+    random_seed: int,
+) -> Tuple[List[Path], Dict[str, str]]:
+    grouped: Dict[str, List[Path]] = {}
+    for video_path in video_files:
+        word_key = _extract_word_key(video_path)
+        grouped.setdefault(word_key, []).append(video_path)
+
+    if len(grouped) < sample_size:
+        raise RuntimeError(f"Only found {len(grouped)} unique words, cannot sample {sample_size}.")
+
+    missing_required = sorted(word for word in required_words if word not in grouped)
+    if missing_required:
+        raise RuntimeError(f"Required words not found in dataset: {', '.join(missing_required)}")
+
+    rng = random.Random(random_seed)
+    selected: Dict[str, Path] = {}
+
+    for word in sorted(required_words):
+        selected[word] = rng.choice(grouped[word])
+
+    remaining_words = [word for word in grouped.keys() if word not in selected]
+    rng.shuffle(remaining_words)
+    for word in remaining_words:
+        if len(selected) >= sample_size:
+            break
+        selected[word] = rng.choice(grouped[word])
+
+    if len(selected) < sample_size:
+        raise RuntimeError(f"After sampling, only selected {len(selected)} unique words.")
+
+    selected_words = sorted(selected.keys())[:sample_size]
+    selected_videos = [selected[word] for word in selected_words]
+    dictionary = {
+        word: selected[word].name
+        for word in selected_words
+    }
+    return selected_videos, dictionary
+
+
+def _write_dictionary_files(output_dir: Path, dictionary_name: str, dictionary: Dict[str, str]) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    json_path = output_dir / f"{dictionary_name}.json"
+    txt_path = output_dir / f"{dictionary_name}.txt"
+
+    json_path.write_text(
+        json.dumps(
+            {
+                "dictionary_name": dictionary_name,
+                "word_count": len(dictionary),
+                "words": dictionary,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    txt_lines = [f"{word}\t{video_name}" for word, video_name in sorted(dictionary.items())]
+    txt_path.write_text("\n".join(txt_lines) + "\n", encoding="utf-8")
+
+
 def batch_export_unity_gesture_stream(
     input_dir: Path,
     output_dir: Path,
@@ -362,6 +439,10 @@ def batch_export_unity_gesture_stream(
     interpolate_missing: bool,
     interpolate_max_gap: int,
     swap_handedness: bool,
+    sample_size: int,
+    required_words: Set[str],
+    random_seed: int,
+    dictionary_name: str,
 ) -> None:
     if not input_dir.exists():
         raise RuntimeError(f"Input directory not found: {input_dir}")
@@ -370,9 +451,16 @@ def batch_export_unity_gesture_stream(
     if not video_files:
         raise RuntimeError(f"No video files found in: {input_dir}")
 
+    selected_videos, dictionary = _select_unique_word_videos(
+        video_files=video_files,
+        sample_size=sample_size,
+        required_words=required_words,
+        random_seed=random_seed,
+    )
+
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    for video_path in video_files:
+    for video_path in selected_videos:
         output_jsonl = output_dir / f"unity_gesture_stream_{video_path.stem}.jsonl"
         export_unity_gesture_stream(
             video_path=video_path,
@@ -383,7 +471,12 @@ def batch_export_unity_gesture_stream(
             swap_handedness=swap_handedness,
         )
 
-    print(f"[batch-export-gesture-stream] videos={len(video_files)}, in={input_dir}, out={output_dir}")
+    _write_dictionary_files(output_dir=output_dir, dictionary_name=dictionary_name, dictionary=dictionary)
+
+    print(
+        f"[batch-export-gesture-stream] videos={len(selected_videos)}, "
+        f"unique_words={len(dictionary)}, in={input_dir}, out={output_dir}"
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -396,12 +489,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--video", help="Input video path for single-file export")
     parser.add_argument(
         "--input-dir",
-        default=r"F:\sign_language\data\asl\asl_first20",
+        default="/home/jm802/sign_language/data/ASL_Citizen/videos",
         help="Input folder for batch export",
     )
     parser.add_argument(
         "--output-dir",
-        default="new_sign_python/asl_first20_jsonl",
+        default="/home/jm802/sign_language/new_sign_python/asl_300",
         help="Output folder for batch export",
     )
     parser.add_argument("--max-hands", type=int, default=2)
@@ -409,6 +502,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-interpolate-missing", action="store_false", dest="interpolate_missing")
     parser.add_argument("--interpolate-max-gap", type=int, default=6)
     parser.add_argument("--swap-handedness", action="store_true", default=True)
+    parser.add_argument("--sample-size", type=int, default=300)
+    parser.add_argument("--random-seed", type=int, default=42)
+    parser.add_argument("--required-words", nargs="*", default=["PJS", "CANDY", "LIBRARY", "LOVE"])
+    parser.add_argument("--dictionary-name", default="asl_300")
     parser.add_argument("--output-jsonl", default="new_sign_python/unity_gesture_stream.jsonl")
     return parser
 
@@ -423,6 +520,10 @@ def main() -> None:
             interpolate_missing=args.interpolate_missing,
             interpolate_max_gap=args.interpolate_max_gap,
             swap_handedness=args.swap_handedness,
+            sample_size=args.sample_size,
+            required_words={word.upper() for word in args.required_words},
+            random_seed=args.random_seed,
+            dictionary_name=args.dictionary_name,
         )
         return
 
