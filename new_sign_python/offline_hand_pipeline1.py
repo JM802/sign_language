@@ -380,15 +380,28 @@ def _select_unique_word_videos(
     if len(grouped) < sample_size:
         raise RuntimeError(f"Only found {len(grouped)} unique words, cannot sample {sample_size}.")
 
-    missing_required = sorted(word for word in required_words if word not in grouped)
-    if missing_required:
-        raise RuntimeError(f"Required words not found in dataset: {', '.join(missing_required)}")
-
     rng = random.Random(random_seed)
     selected: Dict[str, Path] = {}
 
+    missing_required: List[str] = []
     for word in sorted(required_words):
-        selected[word] = rng.choice(grouped[word])
+        if word in grouped:
+            selected[word] = rng.choice(grouped[word])
+            continue
+
+        fallback_matches = [
+            video_path
+            for video_path in video_files
+            if word in video_path.stem.upper()
+        ]
+        if fallback_matches:
+            selected[word] = rng.choice(fallback_matches)
+            continue
+
+        missing_required.append(word)
+
+    if missing_required:
+        print(f"[warning] required words not found in dataset and will be skipped: {', '.join(missing_required)}")
 
     remaining_words = [word for word in grouped.keys() if word not in selected]
     rng.shuffle(remaining_words)
