@@ -1,4 +1,5 @@
 import os
+import re
 import cv2
 import tempfile
 from flask import Flask, request, jsonify, send_from_directory
@@ -10,7 +11,12 @@ from inference_camera import SignLanguageInferencePipeline
 app = Flask(__name__)
 CORS(app, resources={
     r"/*": {
-        "origins": ["http://localhost:5173", "http://127.0.0.1:5173"],
+        "origins": [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "http://localhost:18081",
+            "http://127.0.0.1:18081",
+        ],
         "methods": ["GET", "POST", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"]
     }
@@ -39,8 +45,11 @@ def _extract_resource_stem(filename: str) -> str:
 
 def _extract_word_from_stem(stem: str) -> str:
     if "-" in stem:
-        return stem.split("-", 1)[1].strip().upper()
-    return stem.strip().upper()
+        stem = stem.split("-", 1)[1]
+    word = stem.strip().upper()
+    word = re.sub(r"\s+", " ", word)
+    word = re.sub(r"\s+\d+$", "", word)
+    return word.strip()
 
 
 def _build_asl_resource_index():

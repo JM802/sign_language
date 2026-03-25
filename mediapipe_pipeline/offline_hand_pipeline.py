@@ -3,12 +3,15 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import re
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 from scipy.signal import savgol_filter
 import cv2
 import numpy as np
+from tqdm import tqdm
 
 import mediapipe as mp
 mp_hands = mp.solutions.hands
@@ -350,20 +353,25 @@ def _iter_video_files(input_dir: Path) -> List[Path]:
     )
 
 
+def _normalize_word_label(word: str) -> str:
+    normalized = word.strip().upper()
+    normalized = re.sub(r"\s+", " ", normalized)
+    normalized = re.sub(r"\s+\d+$", "", normalized)
+    return normalized.strip()
+
+
 def _extract_word_key(video_path: Path) -> str:
     stem = video_path.stem.strip()
-    for separator in ("-", "_", " "):
-        if separator in stem:
-            candidate = stem.split(separator)[-1].strip()
-            if candidate:
-                return candidate.upper()
-    return stem.upper()
+    if "-" in stem:
+        candidate = stem.split("-", 1)[1].strip()
+        if candidate:
+            return _normalize_word_label(candidate)
+    return _normalize_word_label(stem)
 
 
 def _select_unique_word_videos(
     video_files: List[Path],
     sample_size: int,
-    required_words: Set[str],
     random_seed: int,
 ) -> Tuple[List[Path], Dict[str, str]]:
     grouped: Dict[str, List[Path]] = {}
@@ -376,30 +384,9 @@ def _select_unique_word_videos(
 
     rng = random.Random(random_seed)
     selected: Dict[str, Path] = {}
-
-    missing_required: List[str] = []
-    for word in sorted(required_words):
-        if word in grouped:
-            selected[word] = rng.choice(grouped[word])
-            continue
-
-        fallback_matches = [
-            video_path
-            for video_path in video_files
-            if word in video_path.stem.upper()
-        ]
-        if fallback_matches:
-            selected[word] = rng.choice(fallback_matches)
-            continue
-
-        missing_required.append(word)
-
-    if missing_required:
-        print(f"[warning] required words not found in dataset and will be skipped: {', '.join(missing_required)}")
-
-    remaining_words = [word for word in grouped.keys() if word not in selected]
-    rng.shuffle(remaining_words)
-    for word in remaining_words:
+    words = list(grouped.keys())
+    rng.shuffle(words)
+    for word in words:
         if len(selected) >= sample_size:
             break
         selected[word] = rng.choice(grouped[word])
@@ -441,13 +428,13 @@ def _write_dictionary_files(output_dir: Path, dictionary_name: str, dictionary: 
 
 def batch_export_unity_gesture_stream(
     input_dir: Path,
-    output_dir: Path,
+    json_output_dir: Path,
+    video_output_dir: Path,
     max_hands: int,
     interpolate_missing: bool,
     interpolate_max_gap: int,
     swap_handedness: bool,
     sample_size: int,
-    required_words: Set[str],
     random_seed: int,
     dictionary_name: str,
 ) -> None:
@@ -461,14 +448,19 @@ def batch_export_unity_gesture_stream(
     selected_videos, dictionary = _select_unique_word_videos(
         video_files=video_files,
         sample_size=sample_size,
-        required_words=required_words,
         random_seed=random_seed,
     )
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if json_output_dir.exists():
+        shutil.rmtree(json_output_dir)
+    json_output_dir.mkdir(parents=True, exist_ok=True)
 
-    for video_path in selected_videos:
-        output_jsonl = output_dir / f"unity_gesture_stream_{video_path.stem}.jsonl"
+    if video_output_dir.exists():
+        shutil.rmtree(video_output_dir)
+    video_output_dir.mkdir(parents=True, exist_ok=True)
+
+    for video_path in tqdm(selected_videos, desc="Exporting JSONL", unit="video"):
+        output_jsonl = json_output_dir / f"unity_gesture_stream_{video_path.stem}.jsonl"
         export_unity_gesture_stream(
             video_path=video_path,
             output_jsonl=output_jsonl,
@@ -477,12 +469,13 @@ def batch_export_unity_gesture_stream(
             interpolate_max_gap=interpolate_max_gap,
             swap_handedness=swap_handedness,
         )
+        shutil.copy2(video_path, video_output_dir / video_path.name)
 
-    _write_dictionary_files(output_dir=output_dir, dictionary_name=dictionary_name, dictionary=dictionary)
+    _write_dictionary_files(output_dir=json_output_dir, dictionary_name=dictionary_name, dictionary=dictionary)
 
     print(
         f"[batch-export-gesture-stream] videos={len(selected_videos)}, "
-        f"unique_words={len(dictionary)}, in={input_dir}, out={output_dir}"
+        f"unique_words={len(dictionary)}, in={input_dir}, json_out={json_output_dir}, video_out={video_output_dir}"
     )
 
 
@@ -500,9 +493,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Input folder for batch export",
     )
     parser.add_argument(
-        "--output-dir",
-        default="/home/jm802/sign_language/new_sign_python/asl_300",
-        help="Output folder for batch export",
+        "--json-output-dir",
+        default="/home/jm802/sign_language/new_sign_python/ASL_300_JSON",
+        help="JSON output folder for batch export",
+    )
+    parser.add_argument(
+        "--video-output-dir",
+        default="/home/jm802/sign_language/new_sign_python/ALS_300_VIDEO",
+        help="Video output folder for batch export",
     )
     parser.add_argument("--max-hands", type=int, default=2)
     parser.add_argument("--interpolate-missing", action="store_true", default=True)
@@ -511,7 +509,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--swap-handedness", action="store_true", default=True)
     parser.add_argument("--sample-size", type=int, default=300)
     parser.add_argument("--random-seed", type=int, default=42)
-    parser.add_argument("--required-words", nargs="*", default=["PJS", "CANDY", "LIBRARY", "LOVE"])
     parser.add_argument("--dictionary-name", default="asl_300")
     parser.add_argument("--output-jsonl", default="new_sign_python/unity_gesture_stream.jsonl")
     return parser
@@ -522,13 +519,13 @@ def main() -> None:
     if args.mode == "batch-export-gesture-stream":
         batch_export_unity_gesture_stream(
             input_dir=Path(args.input_dir).resolve(),
-            output_dir=Path(args.output_dir).resolve(),
+            json_output_dir=Path(args.json_output_dir).resolve(),
+            video_output_dir=Path(args.video_output_dir).resolve(),
             max_hands=args.max_hands,
             interpolate_missing=args.interpolate_missing,
             interpolate_max_gap=args.interpolate_max_gap,
             swap_handedness=args.swap_handedness,
             sample_size=args.sample_size,
-            required_words={word.upper() for word in args.required_words},
             random_seed=args.random_seed,
             dictionary_name=args.dictionary_name,
         )
